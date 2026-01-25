@@ -49,22 +49,18 @@ async def start() -> bool:
 @mcp.tool()
 async def listen() -> str:
     """Listen for user speech and return the transcribed text."""
-    try:
-        result = await send_command("listen")
-        return result["text"]
-    except asyncio.CancelledError:
-        stop_pipecat_process()
-        raise
+    result = await send_command("listen")
+    return result["text"]
 
 
 @mcp.tool()
-async def speak(text: str):
-    """Speak the given text to the user using text-to-speech."""
-    try:
-        await send_command("speak", text=text)
-    except asyncio.CancelledError:
-        stop_pipecat_process()
-        raise
+async def speak(text: str) -> bool:
+    """Speak the given text to the user using text-to-speech.
+
+    Returns true if the agent spoke the text, false otherwise.
+    """
+    await send_command("speak", text=text)
+    return True
 
 
 @mcp.tool()
