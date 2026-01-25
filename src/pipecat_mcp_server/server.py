@@ -17,6 +17,7 @@ Tools:
 """
 
 import asyncio
+import atexit
 
 from mcp.server.fastmcp import FastMCP
 
@@ -81,8 +82,8 @@ def main():
     Runs the MCP server using stdio for communication with the MCP client.
     When the server exits, any running Pipecat agent process is cleaned up.
     """
+    atexit.register(stop_pipecat_process)
     mcp.run()
-    stop_pipecat_process()
 
 
 if __name__ == "__main__":
