@@ -28,21 +28,21 @@ mcp = FastMCP(name="pipecat-mcp-server")
 
 
 @mcp.tool()
-async def start():
+async def start() -> bool:
     """Start a new Pipecat Voice Agent.
 
     Once the voice agent has started you can continuously use the listen() and
     speak() tools to talk to the user.
+
+    Returns true if the agent was started successfully, false otherwise.
     """
     start_pipecat_process()
+    return True
 
 
 @mcp.tool()
 async def listen() -> str:
-    """Listen for user speech and return the transcribed text.
-
-    This returns the next complete utterance.
-    """
+    """Listen for user speech and return the transcribed text."""
     try:
         result = await send_command("listen")
         return result["text"]
@@ -53,12 +53,7 @@ async def listen() -> str:
 
 @mcp.tool()
 async def speak(text: str):
-    """Speak text to the user using text-to-speech.
-
-    Args:
-        text: The text to speak to the user
-
-    """
+    """Speak the given text to the user using text-to-speech."""
     try:
         await send_command("speak", text=text)
     except asyncio.CancelledError:
@@ -67,13 +62,16 @@ async def speak(text: str):
 
 
 @mcp.tool()
-async def stop():
+async def stop() -> bool:
     """Stop the voice pipeline and clean up resources.
 
     Call this when the voice conversation is complete to gracefully
     shut down the voice agent.
+
+    Returns true if the agent was stopped successfully, false otherwise.
     """
     await send_command("stop")
+    return True
 
 
 def main():
