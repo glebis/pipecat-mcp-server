@@ -14,7 +14,7 @@ Pipecat MCP Server gives your AI assistant a voice using [Pipecat](https://githu
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 - API keys for third-party services (Speech-to-Text, Text-to-Speech, ...)
 
-By default, the voice agent will use [Deepgram](https://deepgram.com) for speech-to-text and [Cartesia](https://cartesia.ai/) for text-to-speech.
+By default, the voice agent uses [Deepgram](https://deepgram.com) for speech-to-text and [Cartesia](https://cartesia.ai/) for text-to-speech.
 
 ### Installation
 
@@ -36,23 +36,30 @@ and install your local version with:
 uv tool install -e /path/to/repo/pipecat-mcp-server
 ```
 
+## Running the server
+
+In one terminal, run the server by simply typing:
+
+```bash
+pipecat-mcp-server
+```
+
+This will make the Pipecat MCP Server available at `http://localhost:9090/mcp`.
+
 ## 💻 MCP Client: Claude Code
 
 ### Adding the MCP server
 
-Register the MCP server with the necessary API keys:
+Register the MCP server:
 
 ```bash
-claude mcp add pipecat --scope local \
-  -e DEEPGRAM_API_KEY=your-deepgram-key \
-  -e CARTESIA_API_KEY=your-cartesia-key \
-  -- pipecat-mcp-server
+claude mcp add pipecat --transport http http://localhost:9090/mcp --scope user
 ```
 
 Scope options:
 - `local`: Stored in `~/.claude.json`, applies only to this project
 - `user`: Stored in `~/.claude.json`, applies to all projects
-- `project`: Stored in `.mcp.json` in the project directory (not recommended for API keys)
+- `project`: Stored in `.mcp.json` in the project directory
 
 ### Auto-approving permissions
 
@@ -97,18 +104,13 @@ Let's have a voice conversation.
 
 ### Adding the MCP server
 
-Register the MCP server with the necessary API keys by editing `~/.cursor/mcp.json`:
+Register the MCP server by editing `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "pipecat": {
-      "command": "pipecat-mcp-server",
-      "args": [],
-      "env": {
-        "DEEPGRAM_API_KEY": "...",
-        "CARTESIA_API_KEY": "..."
-      }
+      "url": "http://localhost:9090/mcp"
     }
   }
 }
@@ -117,6 +119,43 @@ Register the MCP server with the necessary API keys by editing `~/.cursor/mcp.js
 ### Auto-approving permissions
 
 For hands-free voice conversations, you can auto-approve tool permissions. Otherwise, Cursor will prompt for confirmation on each tool use, which interrupts the conversation flow. For this, you need to go to the `Auto-Run` agent settings and configure it to `Run Everything`.
+
+> ⚠️ **Warning**: Enabling broad permissions is at your own risk.
+
+### Starting a voice conversation
+
+The recommended approach is to install the [Pipecat skill](.claude/skills/pipecat/SKILL.md) (Cursor supports Claude skills), then run `/pipecat` in Cursor.
+
+> ℹ️ **Note**: The skill is configured to ask for verbal confirmation before making changes to files, adding a layer of safety when using broad permissions.
+
+Alternatively, just create an agent and type:
+
+```
+Let's have a voice conversation.
+```
+
+> ⚠️ **Warning**: Without the skill, if permissions are auto-approved, Cursor won't ask for verbal confirmation before making changes to your files.
+
+## 💻 MCP Client: OpenAI Codex
+
+### Adding the MCP server
+
+Register the MCP server:
+
+```bash
+codex mcp add pipecat --url http://localhost:9090/mcp
+```
+
+### Auto-approving permissions
+
+For hands-free voice conversations, you can auto-approve tool permissions. Otherwise, Cursor will prompt for confirmation on each tool use, which interrupts the conversation flow.
+
+If you start `codex` inside a version controlled project, you will be asked if you allow `Codex` to work on the folder without approvar, just say `Yes`, which adds the following to `~/.codex/config.toml`
+
+```toml
+[projects."/path/to/your/project"]
+trust_level = "trusted"
+```
 
 > ⚠️ **Warning**: Enabling broad permissions is at your own risk.
 
