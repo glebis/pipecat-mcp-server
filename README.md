@@ -1,3 +1,9 @@
+<h1><div align="center">
+ <img alt="Pipecat MCP Server" width="300px" height="auto" src="https://github.com/pipecat-ai/pipecat-mcp-server/raw/refs/heads/main/pipecat.png">
+</div></h1>
+
+[![PyPI](https://img.shields.io/pypi/v/pipecat-ai-mcp-server)](https://pypi.org/project/pipecat-ai-mcp-server) [![Discord](https://img.shields.io/discord/1239284677165056021)](https://discord.gg/pipecat)
+
 # Pipecat MCP Server
 
 Pipecat MCP Server gives your AI agents a voice using [Pipecat](https://github.com/pipecat-ai/pipecat). It should work with any [MCP](https://modelcontextprotocol.io/)-compatible client, exposing four simple tools:
@@ -63,7 +69,7 @@ For hands-free voice conversations, you will need to auto-approve tool permissio
 
 The [Pipecat skill](.claude/skills/pipecat/SKILL.md) provides a better voice conversation experience. It asks for verbal confirmation before making changes to files, adding a layer of safety when using broad permissions.
 
-> ⚠️ **Warning**: Without the skill, if permissions are auto-approved, your agent won't ask for verbal confirmation before modifying your files.
+Alternatively, just tell your agent something like `Let's have a voice conversation`. In this case, the agent won't ask for verbal confirmation before making changes.
 
 ## 💻 MCP Client: Claude Code
 
@@ -76,9 +82,9 @@ claude mcp add pipecat --transport http http://localhost:9090/mcp --scope user
 ```
 
 Scope options:
-- `local`: Stored in `~/.claude.json`, applies only to this project
+- `local`: Stored in `~/.claude.json`, applies only to your project
 - `user`: Stored in `~/.claude.json`, applies to all projects
-- `project`: Stored in `.mcp.json` in the project directory
+- `project`: Stored in `.mcp.json` in your project directory
 
 ### Auto-approving permissions
 
@@ -100,13 +106,11 @@ Create `.claude/settings.local.json` in your project directory:
 }
 ```
 
-This grants permissions for Bash commands, file operations, web fetching and searching, and all Pipecat MCP tools without prompting. See [available tools](https://code.claude.com/docs/en/settings#tools-available-to-claude) if you need to grant more perimssions.
+This grants permissions for bash commands, file operations, web fetching and searching, and all Pipecat MCP tools without prompting. See [available tools](https://code.claude.com/docs/en/settings#tools-available-to-claude) if you need to grant more permissions.
 
 ### Starting a voice conversation
 
-Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md`, then run `/pipecat`.
-
-Alternatively, just type something like "Let's have a voice conversation." (no verbal confirmation for file changes).
+Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md`, then run `/pipecat` inside Claude.
 
 ## 💻 MCP Client: Cursor
 
@@ -130,9 +134,7 @@ Go to the `Auto-Run` agent settings and configure it to `Run Everything`.
 
 ### Starting a voice conversation
 
-Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md` (Cursor supports Claude skills location), then run `/pipecat`.
-
-Alternatively, just type something like "Let's have a voice conversation." (no verbal confirmation for file changes).
+Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md` (Cursor supports Claude skills location), then run `/pipecat` in a new Cursor agent.
 
 ## 💻 MCP Client: OpenAI Codex
 
@@ -155,9 +157,7 @@ trust_level = "trusted"
 
 ### Starting a voice conversation
 
-Install the Pipecat skill into `.codex/skills/pipecat/SKILL.md`, then run `$pipecat`.
-
-Alternatively, just type something like "Let's have a voice conversation." (no verbal confirmation for file changes).
+Install the Pipecat skill into `.codex/skills/pipecat/SKILL.md`, then run `$pipecat` inside Codex.
 
 ## 🗣️ Connecting to the voice agent
 
@@ -165,7 +165,7 @@ Once the voice agent starts, you can connect using different methods depending o
 
 ### Pipecat Playground (default)
 
-When no arguments are specified to the `pipecat-mcp-server` command, the server uses Pipecat's local playground. Connect by opening **http://localhost:7860** in your browser.
+When no arguments are specified to the `pipecat-mcp-server` command, the server uses Pipecat's local playground. Connect by opening http://localhost:7860 in your browser.
 
 You can also run an ngrok tunnel that you can connect to remotely:
 
@@ -175,7 +175,9 @@ ngrok http --url=your-proxy.ngrok.app 7860
 
 ### Daily Prebuilt
 
-To use Daily's WebRTC infrastructure, first install the server with the Daily dependency:
+You can also use [Daily](https://daily.co) and access your agent through a Daily room, which is convenient because you can then access from anywhere without tunnels.
+
+First, install the server with the Daily dependency:
 
 ```bash
 uv tool install pipecat-ai-mcp-server[daily]
@@ -190,7 +192,7 @@ export DAILY_SAMPLE_ROOM_URL=your-daily-room
 pipecat-mcp-server -d
 ```
 
-Connect by opening your Daily room URL (e.g., **https://yourdomain.daily.co/room**) in your browser. Daily Prebuilt provides a ready-to-use video/audio interface.
+Connect by opening your Daily room URL (e.g., `https://yourdomain.daily.co/room`) in your browser. Daily Prebuilt provides a ready-to-use video/audio interface.
 
 ### Phone call
 
@@ -204,7 +206,7 @@ ngrok http --url=your-proxy.ngrok.app 7860
 
 Then, run the Pipecat MCP server with your ngrok URL and the required environment variables for your chosen telephony provider.
 
-| Provider | Environment Variables                     |
+| Provider | Environment variables                     |
 |----------|-------------------------------------------|
 | Twilio   | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` |
 | Telnyx   | `TELNYX_API_KEY`                          |
@@ -220,9 +222,9 @@ export TWILIO_AUTH_TOKEN=your-twilio-auth-token
 pipecat-mcp-server -t twilio -x your-proxy.ngrok.app
 ```
 
-Configure your provider's phone number to point to your ngrok tunnel, then call your number to connect.
+Configure your provider's phone number to point to your ngrok URL, then call your number to connect.
 
-## 🧪 Experimental: Screen Capture
+## 🧪 Screen Capture (Experimental)
 
 You can enable screen capture to stream your screen (or a specific window) to the Pipecat Playground or Daily room. This lets you see what's happening on your computer remotely while having a voice conversation with the agent.
 
@@ -232,35 +234,31 @@ First, install the server with the screen capture dependency:
 uv tool install "pipecat-ai-mcp-server[screen]"
 ```
 
-### Environment Variables
+Then, define the following environment variables:
 
 | Variable                            | Description                                                        |
 |-------------------------------------|--------------------------------------------------------------------|
 | `PIPECAT_MCP_SERVER_SCREEN_CAPTURE` | Set to any value (e.g., `1`) to enable screen capture              |
 | `PIPECAT_MCP_SERVER_SCREEN_WINDOW`  | Optional. Window name to capture (partial match, case-insensitive) |
 
-### Example Usage
-
-Capture your entire primary monitor:
+For example, to capture your entire primary monitor:
 
 ```bash
 export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
+
 pipecat-mcp-server
 ```
 
-Capture a specific window by name:
+And to capture a specific window:
 
 ```bash
 export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
 export PIPECAT_MCP_SERVER_SCREEN_WINDOW="claude"
+
 pipecat-mcp-server
 ```
 
-### Important Notes
-
-- Window capture is based on **window coordinates**, not window content. If another window overlaps the target window, the overlapping content will be captured.
-- The capture region updates dynamically if the target window is moved.
-- If the specified window is not found, capture falls back to the full screen.
+> ℹ️ **Note:** Window capture is based on window coordinates, not content. If another window overlaps the target, the overlapping content will be captured. The capture region updates dynamically if the window is moved. If the specified window is not found, capture falls back to the full screen.
 
 ## 📚 What's Next?
 
