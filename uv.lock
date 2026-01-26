@@ -2350,15 +2350,17 @@ source = { editable = "." }
 dependencies = [
     { name = "loguru" },
     { name = "mcp" },
-    { name = "mss" },
     { name = "pipecat-ai", extra = ["cartesia", "deepgram", "local-smart-turn-v3", "runner", "silero", "webrtc", "websocket"] },
     { name = "python-dotenv" },
-    { name = "pywinctl" },
 ]
 
 [package.optional-dependencies]
 daily = [
     { name = "daily-python" },
+]
+screen = [
+    { name = "mss" },
+    { name = "pywinctl" },
 ]
 
 [package.dev-dependencies]
@@ -2376,12 +2378,12 @@ requires-dist = [
     { name = "daily-python", marker = "extra == 'daily'", specifier = "~=0.23.0" },
     { name = "loguru", specifier = ">=0.7.0,<1" },
     { name = "mcp", specifier = ">=1.0.0" },
-    { name = "mss", specifier = ">=10.0.0" },
+    { name = "mss", marker = "extra == 'screen'", specifier = ">=10.0.0" },
     { name = "pipecat-ai", extras = ["cartesia", "deepgram", "local-smart-turn-v3", "runner", "silero", "webrtc", "websocket"], specifier = ">=0.0.100" },
     { name = "python-dotenv", specifier = ">=1.0.0,<2" },
-    { name = "pywinctl", specifier = ">=0.4" },
+    { name = "pywinctl", marker = "extra == 'screen'", specifier = ">=0.4" },
 ]
-provides-extras = ["daily"]
+provides-extras = ["daily", "screen"]
 
 [package.metadata.requires-dev]
 dev = [

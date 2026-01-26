@@ -22,10 +22,8 @@ classifiers = [
 dependencies = [
     "loguru>=0.7.0,<1",
     "mcp>=1.0.0",
-    "mss>=10.0.0",
     "pipecat-ai[cartesia,deepgram,local-smart-turn-v3,runner,silero,webrtc,websocket]>=0.0.100",
     "python-dotenv>=1.0.0,<2",
-    "pywinctl>=0.4",
 ]
 
 [project.urls]
@@ -37,6 +35,7 @@ Changelog = "https://github.com/pipecat-ai/pipecat-mcp-server/blob/main/CHANGELO
 
 [project.optional-dependencies]
 daily = [ "daily-python~=0.23.0" ]
+screen = [ "mss>=10.0.0", "pywinctl>=0.4" ]
 
 [dependency-groups]
 dev = [

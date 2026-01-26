@@ -226,6 +226,12 @@ Configure your provider's phone number to point to your ngrok tunnel, then call 
 
 You can enable screen capture to stream your screen (or a specific window) to the Pipecat Playground or Daily room. This lets you see what's happening on your computer remotely while having a voice conversation with the agent.
 
+First, install the server with the screen capture dependency:
+
+```bash
+uv tool install "pipecat-ai-mcp-server[screen]"
+```
+
 ### Environment Variables
 
 | Variable                            | Description                                                        |

@@ -19,8 +19,6 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional, Tuple
 
-import mss
-import pywinctl as pwc
 from loguru import logger
 from pipecat.frames.frames import (
     CancelFrame,
@@ -30,6 +28,19 @@ from pipecat.frames.frames import (
     StartFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+
+_screen_capture_supported = False
+
+try:
+    import mss
+    import pywinctl as pwc
+
+    _screen_capture_supported = True
+except ModuleNotFoundError as e:
+    logger.error(f"Exception: {e}")
+    logger.error(
+        "In order to use screen capture, you need to `uv tool install pipecat-mcp-server[screen]`."
+    )
 
 # Environment variable names
 ENV_SCREEN_CAPTURE = "PIPECAT_MCP_SERVER_SCREEN_CAPTURE"
@@ -169,15 +180,19 @@ class ScreenCaptureProcessor(FrameProcessor):
 
     async def _start(self, frame: StartFrame):
         if self._enabled:
+            if not _screen_capture_supported:
+                logger.warning(f"Screen capture enabled but not supported!")
+                return
+
             logger.debug("Screen capture processor enabled")
             if self._window_name:
                 logger.debug(f"Will capture window: {self._window_name}")
             else:
                 logger.debug(f"Will capture monitor {self._monitor}")
+
+            self._create_capture_task()
         else:
             logger.debug(f"Screen capture disabled. Set {ENV_SCREEN_CAPTURE}=1 to enable.")
-
-        self._create_capture_task()
 
     def _create_capture_task(self) -> None:
         """Create and start the periodic capture task."""
