@@ -221,6 +221,40 @@ pipecat-mcp-server -t twilio -x your-proxy.ngrok.app
 
 Configure your provider's phone number to point to your ngrok tunnel, then call your number to connect.
 
+## 🧪 Experimental: Screen Capture
+
+You can enable screen capture to stream your screen (or a specific window) to the Pipecat Playground or Daily room. This lets you see what's happening on your computer remotely while having a voice conversation with the agent.
+
+### Environment Variables
+
+| Variable                            | Description                                                        |
+|-------------------------------------|--------------------------------------------------------------------|
+| `PIPECAT_MCP_SERVER_SCREEN_CAPTURE` | Set to any value (e.g., `1`) to enable screen capture              |
+| `PIPECAT_MCP_SERVER_SCREEN_WINDOW`  | Optional. Window name to capture (partial match, case-insensitive) |
+
+### Example Usage
+
+Capture your entire primary monitor:
+
+```bash
+export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
+pipecat-mcp-server
+```
+
+Capture a specific window by name:
+
+```bash
+export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
+export PIPECAT_MCP_SERVER_SCREEN_WINDOW="claude"
+pipecat-mcp-server
+```
+
+### Important Notes
+
+- Window capture is based on **window coordinates**, not window content. If another window overlaps the target window, the overlapping content will be captured.
+- The capture region updates dynamically if the target window is moved.
+- If the specified window is not found, capture falls back to the full screen.
+
 ## 🧩 MCP Tools
 
 ### start() -> bool
