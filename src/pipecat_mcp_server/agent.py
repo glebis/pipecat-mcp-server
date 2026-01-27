@@ -13,7 +13,7 @@ services, allowing an MCP client to listen for user speech and speak responses.
 
 import asyncio
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -65,6 +65,9 @@ class PipecatMCPAgent:
     - speak(text): Speak text to the user via TTS
     """
 
+    # Sentinel value to indicate client disconnection
+    _DISCONNECT_SENTINEL = object()
+
     def __init__(
         self,
         transport: BaseTransport,
@@ -83,7 +86,7 @@ class PipecatMCPAgent:
         self._task: Optional[asyncio.Task] = None
         self._pipeline_task: Optional[PipelineTask] = None
         self._pipeline_runner: Optional[PipelineRunner] = None
-        self._user_speech_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._user_speech_queue: asyncio.Queue[Any] = asyncio.Queue()
 
         self._started = False
 
@@ -101,7 +104,7 @@ class PipecatMCPAgent:
         if self._started:
             return
 
-        logger.info("Starting Pipecat MCP Agent...")
+        logger.info("Starting Pipecat MCP Agent pipeline...")
 
         # Validate required env vars
         deepgram_key = os.getenv("DEEPGRAM_API_KEY")
@@ -151,6 +154,14 @@ class PipecatMCPAgent:
             ]
         )
 
+        self._pipeline_task = PipelineTask(
+            pipeline,
+            cancel_on_idle_timeout=False,
+            observers=[RTVIObserver(rtvi)],
+        )
+
+        self._pipeline_runner = PipelineRunner(handle_sigterm=True)
+
         @self._transport.event_handler("on_client_connected")
         async def on_connected(transport, client):
             logger.info(f"Client connected")
@@ -159,18 +170,14 @@ class PipecatMCPAgent:
         @self._transport.event_handler("on_client_disconnected")
         async def on_disconnected(transport, client):
             logger.info(f"Client disconnected")
+            # Wake up any pending listen() with disconnect signal
+            await self._user_speech_queue.put(self._DISCONNECT_SENTINEL)
+            if not isinstance(self._runner_args, DailyRunnerArguments) and self._pipeline_task:
+                await self._pipeline_task.cancel()
 
         @user_aggregator.event_handler("on_user_turn_stopped")
         async def on_user_turn_stopped(aggregator, strategy, message: UserTurnStoppedMessage):
             await self._user_speech_queue.put(message.content)
-
-        self._pipeline_task = PipelineTask(
-            pipeline,
-            cancel_on_idle_timeout=False,
-            observers=[RTVIObserver(rtvi)],
-        )
-
-        self._pipeline_runner = PipelineRunner(handle_sigterm=True)
 
         # Start pipeline in background
         self._task = asyncio.create_task(self._pipeline_runner.run(self._pipeline_task))
@@ -218,6 +225,11 @@ class PipecatMCPAgent:
             raise RuntimeError("Pipecat MCP Agent not initialized")
 
         text = await self._user_speech_queue.get()
+
+        # Check if this is a disconnect signal
+        if text is self._DISCONNECT_SENTINEL:
+            raise RuntimeError("I just disconnected, but I might come back.")
+
         return text
 
     async def speak(self, text: str):

@@ -45,23 +45,24 @@ async def bot(runner_args: RunnerArguments):
         request = await read_request()
         cmd = request.get("cmd")
 
+        logger.debug(f"Command '{cmd}' received, processing...")
+
         try:
             if cmd == "listen":
                 text = await agent.listen()
                 await send_response({"text": text})
-
+                logger.debug(f"Command '{cmd}' finished, returning: {text}")
             elif cmd == "speak":
                 await agent.speak(request["text"])
                 await send_response({"ok": True})
-
+                logger.debug(f"Command '{cmd}' finished")
             elif cmd == "stop":
                 await agent.stop()
                 await send_response({"ok": True})
-                break
-
+                logger.debug(f"Command '{cmd}' finished")
             else:
                 await send_response({"error": f"Unknown command: {cmd}"})
-
         except Exception as e:
-            logger.exception(f"Error processing command {cmd}")
-            await send_response({"error": str(e)})
+            logger.warning(f"Error processing command '{cmd}': {e}")
+            await send_response({"text": str(e)})
+            break
