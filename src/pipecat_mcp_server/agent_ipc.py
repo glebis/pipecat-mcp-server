@@ -220,10 +220,11 @@ async def send_command(cmd: str, **kwargs) -> dict:
         response = await _wait_for_command_response()
     except asyncio.CancelledError:
         logger.info(f"Command '{cmd}' was cancelled")
-        raise RuntimeError(f"Command '{cmd}' was cancelled")
+        raise
 
     # Check for errors in response
     if "error" in response:
-        raise RuntimeError(response["error"])
+        error_message = response["error"]
+        logger.error(f"Error running command '{cmd}': {error_message}")
 
     return response
