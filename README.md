@@ -25,9 +25,8 @@ Audio input/output is handled by a **separate audio transport**, such as:
 
 - Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
-- API keys for third-party services (Speech-to-Text, Text-to-Speech, ...)
 
-By default, the voice agent uses [Deepgram](https://deepgram.com) for speech-to-text and [Cartesia](https://cartesia.ai/) for text-to-speech.
+By default, the voice agent uses local models (no API keys required): [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) for speech-to-text and [Kokoro](https://github.com/hexgrad/kokoro) for text-to-speech.
 
 ### Installation
 
@@ -51,14 +50,7 @@ uv tool install -e /path/to/repo/pipecat-mcp-server
 
 ## Running the server
 
-First, set your API keys as environment variables:
-
-```bash
-export DEEPGRAM_API_KEY=your-deepgram-key
-export CARTESIA_API_KEY=your-cartesia-key
-```
-
-Then start the server:
+Start the server:
 
 ```bash
 pipecat-mcp-server
@@ -278,7 +270,7 @@ pipecat-mcp-server
 
 ## 📚 What's Next?
 
-- **Customize services**: Edit `agent.py` to use different STT/TTS providers (ElevenLabs, OpenAI, etc.)
+- **Customize services**: Edit `agent.py` to use different STT/TTS providers
 - **Change transport**: Configure for Twilio, WebRTC, or other transports
 - **Add to your project**: Use this as a template for voice-enabled MCP tools
 - **Learn more**: Check out [Pipecat's docs](https://docs.pipecat.ai/) for advanced features
