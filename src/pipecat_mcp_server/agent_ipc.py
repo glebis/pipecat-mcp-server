@@ -95,12 +95,6 @@ def run_pipecat_process(cmd_queue: multiprocessing.Queue, response_queue: multip
     global _cmd_queue, _response_queue
 
     import os
-    import sys
-
-    from loguru import logger
-
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
 
     _cmd_queue = cmd_queue
     _response_queue = response_queue
