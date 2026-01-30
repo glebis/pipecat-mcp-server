@@ -19,6 +19,8 @@ Audio input/output is handled by a **separate audio transport**, such as:
 > **MCP clients like Cursor, Claude Code, and Codex control the agent, but they are not audio devices.**
 > To hear or speak, you must also connect via one of the audio transports.
 
+<p align="center"><video src="https://github.com/user-attachments/assets/0ad14e37-2de7-46df-870a-167aa667df16" width="500" controls></video></p>
+
 ## 🧭 Getting started
 
 ### Prerequisites
@@ -26,7 +28,7 @@ Audio input/output is handled by a **separate audio transport**, such as:
 - Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 
-By default, the voice agent uses local models (no API keys required): [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) for speech-to-text and [Kokoro](https://github.com/hexgrad/kokoro) for text-to-speech.
+By default, the voice agent uses local models (no API keys required): [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) for speech-to-text and [Kokoro](https://github.com/hexgrad/kokoro) for text-to-speech. The Whisper models are approximately 1.5 GB and are downloaded automatically on the first connection, so the initial startup may take a moment.
 
 ### Installation
 

@@ -172,7 +172,8 @@ class PipecatMCPAgent:
 
         @user_aggregator.event_handler("on_user_turn_stopped")
         async def on_user_turn_stopped(aggregator, strategy, message: UserTurnStoppedMessage):
-            await self._user_speech_queue.put(message.content)
+            if message.content:
+                await self._user_speech_queue.put(message.content)
 
         # Start pipeline in background
         self._task = asyncio.create_task(self._pipeline_runner.run(self._pipeline_task))
@@ -256,9 +257,9 @@ class PipecatMCPAgent:
 
     def _create_stt_service(self) -> STTService:
         if sys.platform == "darwin":
-            return WhisperSTTServiceMLX()
+            return WhisperSTTServiceMLX(model="mlx-community/whisper-large-v3-turbo")
         else:
-            return WhisperSTTService()
+            return WhisperSTTService(model="Systran/faster-distil-whisper-large-v3")
 
     def _create_tts_service(self) -> TTSService:
         return KokoroTTSService(voice_id="af_heart")

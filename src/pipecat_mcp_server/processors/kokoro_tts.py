@@ -7,7 +7,7 @@
 """Kokoro TTS service implementation."""
 
 import asyncio
-from typing import AsyncGenerator, AsyncIterator
+from typing import AsyncGenerator, AsyncIterator, Optional
 
 import numpy as np
 from kokoro import KPipeline
@@ -21,7 +21,35 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.services.tts_service import TTSService
+from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.tracing.service_decorators import traced_tts
+from pydantic import BaseModel
+
+
+def language_to_kokoro_language(language: Language) -> str:
+    """Convert a Language enum to Kokoro language code.
+
+    Args:
+        language: The Language enum value to convert.
+
+    Returns:
+        The corresponding Kokoro language code, or None if not supported.
+
+    """
+    LANGUAGE_MAP = {
+        Language.EN: "a",
+        Language.EN_US: "a",
+        Language.EN_GB: "b",
+        Language.ES: "e",
+        Language.FR: "f",
+        Language.HI: "h",
+        Language.IT: "i",
+        Language.JA: "j",
+        Language.PT: "p",
+        Language.ZH: "z",
+    }
+
+    return resolve_language(language, LANGUAGE_MAP, use_base_code=True)
 
 
 class KokoroTTSService(TTSService):
@@ -31,27 +59,60 @@ class KokoroTTSService(TTSService):
     Automatically downloads the model on first use.
     """
 
+    class InputParams(BaseModel):
+        """Input parameters for Kokoro TTS configuration.
+
+        Parameters
+        ----------
+            language: Language to use for synthesis.
+
+        """
+
+        language: Language = Language.EN
+
     def __init__(
         self,
         *,
         voice_id: str,
-        lang_code: str = "a",
         repo_id="hexgrad/Kokoro-82M",
+        params: Optional[InputParams] = None,
         **kwargs,
     ):
+        """Initialize the Kokoro TTS service.
+
+        Args:
+            voice_id: Voice identifier to use for synthesis.
+            repo_id: Hugging Face repository ID for the Kokoro model.
+                Defaults to "hexgrad/Kokoro-82M".
+            params: Configuration parameters for synthesis.
+            **kwargs: Additional arguments passed to parent `TTSService`.
+
+        """
         super().__init__(**kwargs)
 
+        params = params or KokoroTTSService.InputParams()
+
         self._voice_id = voice_id
-        self._lang_code = lang_code
+        self._lang_code = language_to_kokoro_language(params.language)
         self._pipeline = KPipeline(lang_code=self._lang_code, repo_id=repo_id)
 
         self._resampler = create_stream_resampler()
 
     def can_generate_metrics(self) -> bool:
+        """Indicate that this service supports TTFB and usage metrics."""
         return True
 
     @traced_tts
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
+        """Synthesize speech from text using the Kokoro pipeline.
+
+        Runs the Kokoro pipeline in a background thread and streams audio
+        frames as they become available.
+
+        Args:
+            text: The text to synthesize.
+
+        """
         logger.debug(f"{self}: Generating TTS [{text}]")
 
         def async_next(it):
@@ -84,7 +145,6 @@ class KokoroTTSService(TTSService):
                 await self.stop_ttfb_metrics()
                 yield TTSAudioRawFrame(audio=data, sample_rate=self.sample_rate, num_channels=1)
         except Exception as e:
-            logger.error(f"{self} exception: {e}")
             yield ErrorFrame(error=f"Unknown error occurred: {e}")
         finally:
             logger.debug(f"{self}: Finished TTS [{text}]")
