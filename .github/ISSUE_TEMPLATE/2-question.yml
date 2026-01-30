@@ -50,15 +50,6 @@ body:
     validations:
       required: false
 
-  - type: input
-    id: browser
-    attributes:
-      label: Browser
-      description: Which browser are you using?
-      placeholder: e.g., Chrome 139.0.7258.127
-    validations:
-      required: false
-
   - type: textarea
     id: question
     attributes:
