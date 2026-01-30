@@ -28,7 +28,7 @@ Audio input/output is handled by a **separate audio transport**, such as:
 - Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 
-By default, the voice agent uses local models (no API keys required): [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) for speech-to-text and [Kokoro](https://github.com/hexgrad/kokoro) for text-to-speech.
+By default, the voice agent uses local models (no API keys required): [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) for speech-to-text and [Kokoro](https://github.com/hexgrad/kokoro) for text-to-speech. The Whisper models are approximately 1.5 GB and are downloaded automatically on the first connection, so the initial startup may take a moment.
 
 ### Installation
 
