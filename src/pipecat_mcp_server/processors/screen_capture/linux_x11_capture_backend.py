@@ -88,6 +88,61 @@ def _get_window_title(display, window) -> str:
     return ""
 
 
+def _list_windows_x11(display) -> List["WindowInfo"]:
+    """List all toplevel windows using the EWMH _NET_CLIENT_LIST property.
+
+    Args:
+        display: Xlib Display instance.
+
+    Returns:
+        A list of WindowInfo for each visible window with a title.
+
+    """
+    from .base_capture_backend import WindowInfo
+
+    root = display.screen().root
+    net_client_list = display.intern_atom("_NET_CLIENT_LIST")
+    wm_class = display.intern_atom("WM_CLASS")
+
+    prop = root.get_full_property(net_client_list, _X_module.AnyPropertyType)
+    if not prop:
+        return []
+
+    windows = []
+    for wid in prop.value:
+        try:
+            win = display.create_resource_object("window", wid)
+            attrs = win.get_attributes()
+            if attrs.map_state != 2:  # Not viewable
+                continue
+        except Exception:
+            continue
+
+        title = _get_window_title(display, win)
+        if not title:
+            continue
+
+        # Get app name from WM_CLASS
+        app_name = ""
+        try:
+            cls = win.get_full_property(wm_class, _X_module.AnyPropertyType)
+            if cls and cls.value:
+                val = cls.value
+                if isinstance(val, bytes):
+                    # WM_CLASS is two null-terminated strings: instance\0class\0
+                    parts = val.rstrip(b"\x00").split(b"\x00")
+                    if len(parts) >= 2:
+                        app_name = parts[1].decode("utf-8", errors="replace")
+                    elif parts:
+                        app_name = parts[0].decode("utf-8", errors="replace")
+        except Exception:
+            pass
+
+        windows.append(WindowInfo(title=title, app_name=app_name, window_id=wid))
+
+    return windows
+
+
 def _capture_x11(display, window) -> Optional[Tuple[bytes, Tuple[int, int]]]:
     """Capture a window's content via XGetImage.
 
@@ -136,8 +191,19 @@ class LinuxX11CaptureBackend(BaseCaptureBackend):
         self._window = None
 
     async def list_windows(self) -> List[WindowInfo]:
-        """List all open windows via X11. Not yet implemented."""
-        raise NotImplementedError("list_windows is not yet implemented for Linux X11")
+        """List all open windows via the EWMH _NET_CLIENT_LIST property.
+
+        Returns:
+            A list of `WindowInfo` for each visible window with a title.
+
+        """
+        _ensure_xlib()
+        display = _display_module.Display()
+        try:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, _list_windows_x11, display)
+        finally:
+            display.close()
 
     async def start(self, window_id: Optional[int], monitor: int) -> Optional[int]:
         """Set up the X11 display and find the target window.
