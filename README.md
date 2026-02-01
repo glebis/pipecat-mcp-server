@@ -234,9 +234,14 @@ pipecat-mcp-server -t twilio -x your-proxy.ngrok.app
 
 Configure your provider's phone number to point to your ngrok URL, then call your number to connect.
 
-## 🧪 Screen Capture (Experimental)
+## 🖥️ Screen Capture
 
 You can enable screen capture to stream your screen (or a specific window) to the Pipecat Playground or Daily room. This lets you see what's happening on your computer remotely while having a voice conversation with the agent.
+
+**Supported platforms:**
+
+- **macOS** — uses ScreenCaptureKit for true window-level capture (not affected by overlapping windows)
+- **Linux (X11)** — uses Xlib for window and full-screen capture
 
 First, install the server with the screen capture dependency:
 
