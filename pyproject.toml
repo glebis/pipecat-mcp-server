@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 dependencies = [
-    "kokoro>=0.9.4,<1",
+    "kokoro-onnx>=0.5.0,<1",
     "loguru>=0.7.0,<1",
     "mcp>=1.0.0",
     "pip>=25.3",
