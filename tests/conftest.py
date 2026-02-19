@@ -93,13 +93,16 @@ sys.modules["dotenv"].load_dotenv = lambda *a, **kw: None
 # Stub classes for Pipecat frame types (needed for isinstance() checks)
 # ---------------------------------------------------------------------------
 
+
 class _Frame:
     """Stub for pipecat.frames.frames.Frame."""
+
     pass
 
 
 class _ImageRawFrame(_Frame):
     """Stub for pipecat.frames.frames.ImageRawFrame."""
+
     def __init__(self, image=b"", size=(0, 0)):
         self.image = image
         self.size = size
@@ -107,17 +110,20 @@ class _ImageRawFrame(_Frame):
 
 class _OutputImageRawFrame(_ImageRawFrame):
     """Stub for pipecat.frames.frames.OutputImageRawFrame."""
+
     pass
 
 
 class _FrameDirection:
     """Stub for pipecat.processors.frame_processor.FrameDirection."""
+
     DOWNSTREAM = "downstream"
     UPSTREAM = "upstream"
 
 
 class _FrameProcessor:
     """Stub for pipecat.processors.frame_processor.FrameProcessor."""
+
     def __init__(self, name="", **kwargs):
         self.name = name
         self._pushed_frames = []
@@ -143,6 +149,7 @@ _fp_mod.FrameProcessor = _FrameProcessor
 # ---------------------------------------------------------------------------
 # Make @mcp.tool() a passthrough decorator so server.py functions stay callable
 # ---------------------------------------------------------------------------
+
 
 class _PassthroughFastMCP:
     """Stub FastMCP that makes @mcp.tool() a no-op decorator."""

@@ -2,12 +2,12 @@
 
 import asyncio
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from pipecat.frames.frames import Frame, OutputImageRawFrame
 from pipecat.processors.frame_processor import FrameDirection
+
 from pipecat_mcp_server.processors.vision import VisionProcessor
 
 

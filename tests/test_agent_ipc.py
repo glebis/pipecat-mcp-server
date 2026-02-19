@@ -1,7 +1,9 @@
 """Tests for agent_ipc port cleanup and startup health check."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from pipecat_mcp_server.agent_ipc import _cleanup_port, check_startup_health
 
 
@@ -76,6 +78,7 @@ class TestCheckStartupHealth:
     async def test_returns_startup_error_from_queue(self):
         """Should extract startup error message from response queue."""
         import multiprocessing
+
         mock_process = MagicMock()
         mock_process.is_alive.return_value = False
         mock_process.exitcode = 1

@@ -54,8 +54,10 @@ def _cleanup_port(port: int = 7860) -> tuple[list[str], list[str]]:
 
     Returns:
         Tuple of (killed_pids, warned_pids).
+
     """
     import subprocess
+
     killed = []
     warned = []
     try:
@@ -71,8 +73,7 @@ def _cleanup_port(port: int = 7860) -> tuple[list[str], list[str]]:
             # Check what process this is
             try:
                 ps_result = subprocess.run(
-                    ["ps", "-p", pid, "-o", "command="],
-                    capture_output=True, text=True, timeout=5
+                    ["ps", "-p", pid, "-o", "command="], capture_output=True, text=True, timeout=5
                 )
                 cmd_line = ps_result.stdout.strip().lower()
                 if "python" in cmd_line or "pipecat" in cmd_line:
@@ -99,6 +100,7 @@ async def check_startup_health(process, response_queue, delay: float = 1.0) -> s
 
     Returns:
         None if process is alive, or error message string if it died.
+
     """
     await asyncio.sleep(delay)
     if process.is_alive():
@@ -127,6 +129,7 @@ def start_pipecat_process() -> str | None:
 
     Returns:
         None if started successfully, or an error message string if startup failed.
+
     """
     global _cmd_queue, _response_queue, _pipecat_process
 
@@ -144,6 +147,7 @@ def start_pipecat_process() -> str | None:
     # (e.g. --transport daily) to the pipecat runner
     import os
     import sys
+
     parent_argv = list(sys.argv)
 
     # Inject transport flag from env var

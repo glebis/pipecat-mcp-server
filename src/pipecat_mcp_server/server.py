@@ -26,10 +26,10 @@ from mcp.server.fastmcp import FastMCP
 
 from pipecat_mcp_server import agent_ipc
 from pipecat_mcp_server.agent_ipc import (
+    check_startup_health,
     send_command,
     start_pipecat_process,
     stop_pipecat_process,
-    check_startup_health,
 )
 
 RUNNER_URL = "http://localhost:7860"
@@ -148,8 +148,7 @@ async def start() -> str:
     if validation["missing_keys"]:
         keys = ", ".join(validation["missing_keys"])
         return (
-            f"Missing API key(s) for '{preset}' preset: {keys}. "
-            f"Set the key or change VOICE_PRESET."
+            f"Missing API key(s) for '{preset}' preset: {keys}. Set the key or change VOICE_PRESET."
         )
 
     error = start_pipecat_process()
@@ -157,9 +156,7 @@ async def start() -> str:
         return error
 
     # Async health check (replaces blocking time.sleep in agent_ipc)
-    health_error = await check_startup_health(
-        agent_ipc._pipecat_process, agent_ipc._response_queue
-    )
+    health_error = await check_startup_health(agent_ipc._pipecat_process, agent_ipc._response_queue)
     if health_error:
         return health_error
 

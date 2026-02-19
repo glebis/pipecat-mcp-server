@@ -45,6 +45,7 @@ class VisionProcessor(FrameProcessor):
 
         Raises:
             asyncio.TimeoutError: If no result arrives within the timeout.
+
         """
         return await asyncio.wait_for(self._result_queue.get(), timeout=timeout)
 

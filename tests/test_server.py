@@ -1,7 +1,8 @@
 """Tests for server.py MCP tool wrappers."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestServerCaptureScreenshotTool:
@@ -186,11 +187,14 @@ class TestValidatePreset:
         assert result["preset"] == "groq"
 
     def test_groq_preset_missing_key(self):
-        """groq preset with no GROQ_API_KEY should report missing key."""
+        """Groq preset with no GROQ_API_KEY should report missing key."""
         from pipecat_mcp_server.server import _validate_preset
 
-        env = {k: v for k, v in __import__("os").environ.items()
-               if k not in ("VOICE_PRESET", "GROQ_API_KEY")}
+        env = {
+            k: v
+            for k, v in __import__("os").environ.items()
+            if k not in ("VOICE_PRESET", "GROQ_API_KEY")
+        }
         env["VOICE_PRESET"] = "groq"
         with patch.dict("os.environ", env, clear=True):
             result = _validate_preset()
@@ -199,7 +203,7 @@ class TestValidatePreset:
         assert "GROQ_API_KEY" in result["missing_keys"]
 
     def test_groq_preset_key_present(self):
-        """groq preset with GROQ_API_KEY set should have empty missing_keys."""
+        """Groq preset with GROQ_API_KEY set should have empty missing_keys."""
         from pipecat_mcp_server.server import _validate_preset
 
         env = {"VOICE_PRESET": "groq", "GROQ_API_KEY": "test-key-123"}
@@ -210,7 +214,7 @@ class TestValidatePreset:
         assert result["missing_keys"] == []
 
     def test_deepgram_preset_missing_key(self):
-        """deepgram preset requires DEEPGRAM_API_KEY."""
+        """Deepgram preset requires DEEPGRAM_API_KEY."""
         from pipecat_mcp_server.server import _validate_preset
 
         env = {"VOICE_PRESET": "deepgram"}
@@ -221,7 +225,7 @@ class TestValidatePreset:
         assert "DEEPGRAM_API_KEY" in result["missing_keys"]
 
     def test_cartesia_preset_missing_both_keys(self):
-        """cartesia preset requires DEEPGRAM_API_KEY + CARTESIA_API_KEY."""
+        """Cartesia preset requires DEEPGRAM_API_KEY + CARTESIA_API_KEY."""
         from pipecat_mcp_server.server import _validate_preset
 
         env = {"VOICE_PRESET": "cartesia"}
@@ -233,7 +237,7 @@ class TestValidatePreset:
         assert "CARTESIA_API_KEY" in result["missing_keys"]
 
     def test_cartesia_preset_partial_keys(self):
-        """cartesia preset with only one key still reports the other as missing."""
+        """Cartesia preset with only one key still reports the other as missing."""
         from pipecat_mcp_server.server import _validate_preset
 
         env = {"VOICE_PRESET": "cartesia", "DEEPGRAM_API_KEY": "dg-key"}
@@ -244,7 +248,7 @@ class TestValidatePreset:
         assert "DEEPGRAM_API_KEY" not in result["missing_keys"]
 
     def test_local_preset_no_keys_needed(self):
-        """local preset requires no API keys."""
+        """Local preset requires no API keys."""
         from pipecat_mcp_server.server import _validate_preset
 
         env = {"VOICE_PRESET": "local"}
@@ -255,7 +259,7 @@ class TestValidatePreset:
         assert result["missing_keys"] == []
 
     def test_kokoro_preset_no_keys_needed(self):
-        """kokoro preset requires no API keys."""
+        """Kokoro preset requires no API keys."""
         from pipecat_mcp_server.server import _validate_preset
 
         env = {"VOICE_PRESET": "kokoro"}
@@ -276,7 +280,9 @@ class TestValidatePreset:
         # Should have an error indicator -- either missing_keys with a
         # sentinel or a separate field. We check that the preset is reported.
         assert result["preset"] == "nonexistent"
-        assert "error" in result or len(result["missing_keys"]) > 0 or "invalid" in str(result).lower()
+        assert (
+            "error" in result or len(result["missing_keys"]) > 0 or "invalid" in str(result).lower()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -295,11 +301,19 @@ class TestStartIntegration:
         mock_session = _mock_aiohttp_get_200()
         mock_cs = MagicMock(return_value=mock_session)
 
-        with patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None), \
-             patch("pipecat_mcp_server.server.check_startup_health", new_callable=AsyncMock, return_value=None), \
-             patch("pipecat_mcp_server.server.TRANSPORT", "webrtc"), \
-             patch("pipecat_mcp_server.server.aiohttp.ClientSession", mock_cs), \
-             patch.dict("os.environ", {"VOICE_PRESET": "groq", "GROQ_API_KEY": "key123"}, clear=False):
+        with (
+            patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None),
+            patch(
+                "pipecat_mcp_server.server.check_startup_health",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("pipecat_mcp_server.server.TRANSPORT", "webrtc"),
+            patch("pipecat_mcp_server.server.aiohttp.ClientSession", mock_cs),
+            patch.dict(
+                "os.environ", {"VOICE_PRESET": "groq", "GROQ_API_KEY": "key123"}, clear=False
+            ),
+        ):
             result = await start()
 
         assert "preset" in result.lower()
@@ -310,13 +324,18 @@ class TestStartIntegration:
         """start() should return error when required API key is missing."""
         from pipecat_mcp_server.server import start
 
-        env = {k: v for k, v in __import__("os").environ.items()
-               if k not in ("GROQ_API_KEY",)}
+        env = {k: v for k, v in __import__("os").environ.items() if k not in ("GROQ_API_KEY",)}
         env["VOICE_PRESET"] = "groq"
 
-        with patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None), \
-             patch("pipecat_mcp_server.server.check_startup_health", new_callable=AsyncMock, return_value=None), \
-             patch.dict("os.environ", env, clear=True):
+        with (
+            patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None),
+            patch(
+                "pipecat_mcp_server.server.check_startup_health",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.dict("os.environ", env, clear=True),
+        ):
             result = await start()
 
         assert "GROQ_API_KEY" in result
@@ -327,10 +346,16 @@ class TestStartIntegration:
         """start() with livekit transport should not poll HTTP."""
         from pipecat_mcp_server.server import start
 
-        with patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None), \
-             patch("pipecat_mcp_server.server.check_startup_health", new_callable=AsyncMock, return_value=None), \
-             patch("pipecat_mcp_server.server.TRANSPORT", "livekit"), \
-             patch.dict("os.environ", {"VOICE_PRESET": "local"}, clear=False):
+        with (
+            patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None),
+            patch(
+                "pipecat_mcp_server.server.check_startup_health",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("pipecat_mcp_server.server.TRANSPORT", "livekit"),
+            patch.dict("os.environ", {"VOICE_PRESET": "local"}, clear=False),
+        ):
             result = await start()
 
         assert "ok" in result.lower()
@@ -341,10 +366,16 @@ class TestStartIntegration:
         """start() with twilio transport returns telephony-specific message."""
         from pipecat_mcp_server.server import start
 
-        with patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None), \
-             patch("pipecat_mcp_server.server.check_startup_health", new_callable=AsyncMock, return_value=None), \
-             patch("pipecat_mcp_server.server.TRANSPORT", "twilio"), \
-             patch.dict("os.environ", {"VOICE_PRESET": "local"}, clear=False):
+        with (
+            patch("pipecat_mcp_server.server.start_pipecat_process", return_value=None),
+            patch(
+                "pipecat_mcp_server.server.check_startup_health",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("pipecat_mcp_server.server.TRANSPORT", "twilio"),
+            patch.dict("os.environ", {"VOICE_PRESET": "local"}, clear=False),
+        ):
             result = await start()
 
         assert "ok" in result.lower()
@@ -358,9 +389,15 @@ class TestStartIntegration:
         mock_start = MagicMock(return_value=None)
         env = {"VOICE_PRESET": "groq"}  # no GROQ_API_KEY
 
-        with patch("pipecat_mcp_server.server.start_pipecat_process", mock_start), \
-             patch("pipecat_mcp_server.server.check_startup_health", new_callable=AsyncMock, return_value=None), \
-             patch.dict("os.environ", env, clear=True):
+        with (
+            patch("pipecat_mcp_server.server.start_pipecat_process", mock_start),
+            patch(
+                "pipecat_mcp_server.server.check_startup_health",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.dict("os.environ", env, clear=True),
+        ):
             result = await start()
 
         # Preset validation should catch the missing key before child starts

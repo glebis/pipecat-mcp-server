@@ -1,7 +1,8 @@
 """Tests for bot.py command routing."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestBotCaptureScreenshotRouting:
@@ -79,11 +80,16 @@ class TestBotErrorResponsesUseErrorKey:
             responses.append(resp)
 
         with (
-            patch("pipecat_mcp_server.bot.create_agent", new_callable=AsyncMock, return_value=mock_agent),
+            patch(
+                "pipecat_mcp_server.bot.create_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
             patch("pipecat_mcp_server.bot.read_request", side_effect=mock_read_request),
             patch("pipecat_mcp_server.bot.send_response", side_effect=mock_send_response),
         ):
             from pipecat_mcp_server.bot import bot
+
             with pytest.raises(KeyboardInterrupt):
                 await bot(MagicMock())
 
@@ -117,11 +123,16 @@ class TestBotLoopSurvivesErrors:
             responses.append(resp)
 
         with (
-            patch("pipecat_mcp_server.bot.create_agent", new_callable=AsyncMock, return_value=mock_agent),
+            patch(
+                "pipecat_mcp_server.bot.create_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
             patch("pipecat_mcp_server.bot.read_request", side_effect=mock_read_request),
             patch("pipecat_mcp_server.bot.send_response", side_effect=mock_send_response),
         ):
             from pipecat_mcp_server.bot import bot
+
             with pytest.raises(KeyboardInterrupt):
                 await bot(MagicMock())
 

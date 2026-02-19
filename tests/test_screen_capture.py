@@ -1,7 +1,8 @@
 """Tests for screen capture permission error propagation."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestScreenCapturePermissionErrorPropagation:
