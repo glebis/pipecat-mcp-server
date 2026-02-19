@@ -89,6 +89,15 @@ class ScreenCaptureProcessor(FrameProcessor):
         await self._stop_capture()
         return await self._start_capture(window_id)
 
+    async def list_windows(self):
+        """List all open windows via the capture backend.
+
+        Returns:
+            A list of window objects with title, app_name, and window_id attributes.
+
+        """
+        return await self._backend.list_windows()
+
     async def _start_capture(self, window_id: Optional[int] = None) -> Optional[int]:
         """Start capturing from a window or full screen.
 
@@ -97,11 +106,7 @@ class ScreenCaptureProcessor(FrameProcessor):
             or capturing full screen.
 
         """
-        try:
-            matched_id = await self._backend.start(window_id, self._monitor)
-        except PermissionError as e:
-            logger.error(str(e))
-            return None
+        matched_id = await self._backend.start(window_id, self._monitor)
 
         if window_id is not None:
             logger.debug(f"Capturing window ID: {window_id}")

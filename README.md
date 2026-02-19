@@ -28,7 +28,7 @@ Audio input/output is handled by a **separate audio/video transport**, such as:
 - Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 
-By default, the voice agent uses local models (no API keys required): [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) for speech-to-text and [Kokoro](https://github.com/hexgrad/kokoro) for text-to-speech. The Whisper models are approximately 1.5 GB and are downloaded automatically on the first connection, so the initial startup may take a moment.
+By default, the voice agent uses [Groq](https://groq.com/) cloud services (Whisper STT + Orpheus TTS). Set `GROQ_API_KEY` to get started. See [Voice Presets](#-voice-presets) below for alternative configurations including fully local options.
 
 ### Installation
 
@@ -58,7 +58,36 @@ Start the server:
 pipecat-mcp-server
 ```
 
-This will make the Pipecat MCP Server available at `http://localhost:9090/mcp`.
+The server uses **stdio** transport by default and is designed to be launched by an MCP client (Claude Code, Cursor, Codex). After the MCP client calls the `start` tool, the voice agent's audio playground becomes available at `http://localhost:7860`.
+
+## 🎙️ Voice Presets
+
+Set `VOICE_PRESET` to switch between STT/TTS combinations:
+
+| Preset | STT | TTS | Requires | Notes |
+|--------|-----|-----|----------|-------|
+| `groq` (default) | Groq Whisper | Groq Orpheus | `GROQ_API_KEY` | Supports Orpheus emotion tags natively |
+| `deepgram` | Deepgram Nova-3 | Deepgram Aura | `DEEPGRAM_API_KEY` | Streaming, low latency |
+| `cartesia` | Deepgram Nova-3 | Cartesia Sonic | `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY` | Lowest latency, Orpheus tags converted to SSML |
+| `local` | MLX Whisper | Piper TTS | None | Fully local, macOS only |
+| `kokoro` | MLX Whisper | Kokoro TTS | None | Fully local, macOS, better voice quality |
+
+Example:
+
+```bash
+export VOICE_PRESET=cartesia
+export DEEPGRAM_API_KEY=your-key
+export CARTESIA_API_KEY=your-key
+pipecat-mcp-server
+```
+
+### Emotion tag handling
+
+The agent processes [Orpheus-style emotion tags](https://huggingface.co/canopylabs/orpheus-tts-0.1-finetune-prod) differently per preset:
+
+- **groq**: Tags like `[cheerful]`, `<laugh>` pass through natively
+- **cartesia**: Bracket tags convert to Cartesia SSML (`[cheerful]` -> `<emotion value="happy"/>`)
+- **deepgram/local/kokoro**: All emotion markup is stripped
 
 ## Auto-approving permissions
 
@@ -90,10 +119,10 @@ For example:
 
 ### Adding the MCP server
 
-Register the MCP server:
+Register the MCP server using stdio transport:
 
 ```bash
-claude mcp add pipecat --transport http http://localhost:9090/mcp --scope user
+claude mcp add pipecat --transport stdio pipecat-mcp-server --scope user
 ```
 
 Scope options:
@@ -218,6 +247,18 @@ pipecat-mcp-server -d
 
 Connect by opening your Daily room URL (e.g., `https://yourdomain.daily.co/room`) in your browser. Daily Prebuilt provides a ready-to-use video/audio interface.
 
+### LiveKit
+
+[LiveKit](https://livekit.io) provides low-latency WebRTC rooms, similar to Daily but self-hostable.
+
+```bash
+export LIVEKIT_URL=wss://your-livekit-server
+export LIVEKIT_API_KEY=your-api-key
+export LIVEKIT_API_SECRET=your-api-secret
+
+pipecat-mcp-server --transport livekit
+```
+
 ### Phone call
 
 To connect via phone call, pass `-t <provider> -x <your-proxy>` where `<provider>` is one of `twilio`, `telnyx`, `exotel`, or `plivo`, and `<your-proxy>` is your ngrok tunnel domain (e.g., `your-proxy.ngrok.app`).
@@ -248,10 +289,21 @@ pipecat-mcp-server -t twilio -x your-proxy.ngrok.app
 
 Configure your provider's phone number to point to your ngrok URL, then call your number to connect.
 
+## 🧪 Testing
+
+The project includes a test suite that runs without the full Pipecat dependency tree. Tests mock heavy framework imports while preserving real type hierarchies for `isinstance()` checks.
+
+```bash
+pip install pytest pytest-asyncio
+python -m pytest tests/ -v
+```
+
+Tests cover: emotion tag processing, VisionProcessor capture/passthrough, bot command routing, and MCP tool wrappers.
+
 ## 📚 What's Next?
 
-- **Customize services**: Edit `agent.py` to use different STT/TTS providers
-- **Change transport**: Configure for Twilio, WebRTC, or other transports
+- **Switch voice presets**: Set `VOICE_PRESET` to try different STT/TTS combinations
+- **Change transport**: Configure for Daily, LiveKit, Twilio, WebRTC, or other transports
 - **Add to your project**: Use this as a template for voice-enabled MCP tools
 - **Learn more**: Check out [Pipecat's docs](https://docs.pipecat.ai/) for advanced features
 - **Get help**: Join [Pipecat's Discord](https://discord.gg/pipecat) to connect with the community

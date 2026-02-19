@@ -76,5 +76,4 @@ async def bot(runner_args: RunnerArguments):
                 await send_response({"error": f"Unknown command: {cmd}"})
         except Exception as e:
             logger.warning(f"Error processing command '{cmd}': {e}")
-            await send_response({"text": str(e)})
-            break
+            await send_response({"error": str(e)})

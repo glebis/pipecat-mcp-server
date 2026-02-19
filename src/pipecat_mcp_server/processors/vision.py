@@ -37,9 +37,16 @@ class VisionProcessor(FrameProcessor):
         logger.debug("Screen capture requested")
         self._capture_requested = True
 
-    async def get_result(self) -> str:
-        """Wait for and return the saved image path."""
-        return await self._result_queue.get()
+    async def get_result(self, timeout: float = 5.0) -> str:
+        """Wait for and return the saved image path.
+
+        Args:
+            timeout: Maximum seconds to wait for a capture result.
+
+        Raises:
+            asyncio.TimeoutError: If no result arrives within the timeout.
+        """
+        return await asyncio.wait_for(self._result_queue.get(), timeout=timeout)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames and save when capture is requested."""

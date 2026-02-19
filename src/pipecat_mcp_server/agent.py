@@ -12,6 +12,8 @@ services, allowing an MCP client to listen for user speech and speak responses.
 """
 
 import asyncio
+import os
+import re
 import sys
 from typing import Any, Optional
 
@@ -39,6 +41,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.runner.types import (
     DailyRunnerArguments,
+    LiveKitRunnerArguments,
     RunnerArguments,
     SmallWebRTCRunnerArguments,
     WebSocketRunnerArguments,
@@ -47,6 +50,7 @@ from pipecat.runner.utils import create_transport
 from pipecat.services.stt_service import STTService
 from pipecat.services.tts_service import TTSService
 from pipecat.services.whisper.stt import WhisperSTTService, WhisperSTTServiceMLX
+from pipecat.services.deepgram import DeepgramSTTService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
@@ -54,11 +58,81 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
-from pipecat_mcp_server.processors.kokoro_tts import KokoroTTSService
+from pipecat.services.groq import GroqTTSService, GroqSTTService
+from pipecat.transcriptions.language import Language
 from pipecat_mcp_server.processors.screen_capture import ScreenCaptureProcessor
 from pipecat_mcp_server.processors.vision import VisionProcessor
 
-load_dotenv(override=True)
+load_dotenv(
+    dotenv_path=os.path.join(os.path.dirname(__file__), ".env"),
+    override=True,
+)
+
+
+# Voice presets: each maps to an STT + TTS combination.
+# Set VOICE_PRESET env var to switch. Default is "groq".
+#
+# Available presets:
+#   groq     - Groq Whisper STT + Groq Orpheus TTS (cloud, current default)
+#   deepgram - Deepgram Nova-3 STT + Deepgram Aura TTS (cloud, streaming)
+#   cartesia - Deepgram Nova-3 STT + Cartesia Sonic TTS (cloud, lowest latency)
+#   local    - MLX Whisper STT + Piper TTS (fully local, macOS)
+#   kokoro   - MLX Whisper STT + Kokoro TTS (fully local, macOS, better quality)
+VALID_PRESETS = ("groq", "deepgram", "cartesia", "local", "kokoro")
+
+# Presets that support Orpheus-style emotional markup natively (pass through).
+_ORPHEUS_PRESETS = {"groq"}
+
+# Presets that support Cartesia-style SSML emotion tags (convert from Orpheus).
+_CARTESIA_PRESETS = {"cartesia"}
+
+# Patterns to match Orpheus emotion tags
+_BRACKET_TAG_RE = re.compile(r"\[(?:cheerful|whisper|excited|sad|calm)\]\s*", re.IGNORECASE)
+_EMOTION_TAG_RE = re.compile(
+    r"<(?:laugh|chuckle|sigh|gasp|yawn|groan|cough|sniffle)>\s*", re.IGNORECASE
+)
+
+# Orpheus bracket tag -> Cartesia <emotion value="..."/> mapping
+_ORPHEUS_TO_CARTESIA = {
+    "cheerful": "happy",
+    "whisper": "calm",  # No whisper in Cartesia; calm is closest
+    "excited": "excited",
+    "sad": "sad",
+    "calm": "calm",
+}
+
+
+def _strip_emotion_tags(text: str) -> str:
+    """Remove Orpheus-style emotion markup from text."""
+    text = _BRACKET_TAG_RE.sub("", text)
+    text = _EMOTION_TAG_RE.sub("", text)
+    return text.strip()
+
+
+def _orpheus_to_cartesia(text: str) -> str:
+    """Convert Orpheus emotion tags to Cartesia SSML-like emotion tags.
+
+    Bracket directions like [cheerful] become <emotion value="happy"/>.
+    Non-speech sounds like <laugh> are stripped (Cartesia can't produce them).
+    """
+
+    def replace_bracket(match: re.Match) -> str:
+        tag = match.group(1).lower()
+        cartesia_emotion = _ORPHEUS_TO_CARTESIA.get(tag)
+        if cartesia_emotion:
+            return f'<emotion value="{cartesia_emotion}"/>'
+        return ""
+
+    # Convert bracket directions [cheerful] -> <emotion value="happy"/>
+    text = re.sub(
+        r"\[(cheerful|whisper|excited|sad|calm)\]\s*",
+        replace_bracket,
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Strip non-speech sounds (Cartesia can't produce them)
+    text = _EMOTION_TAG_RE.sub("", text)
+    return text.strip()
 
 
 class PipecatMCPAgent:
@@ -86,6 +160,7 @@ class PipecatMCPAgent:
         """
         self._transport = transport
         self._runner_args = runner_args
+        self._preset = self._resolve_preset()
 
         self._task: Optional[asyncio.Task] = None
         self._pipeline_task: Optional[PipelineTask] = None
@@ -123,7 +198,7 @@ class PipecatMCPAgent:
                         TurnAnalyzerUserTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())
                     ]
                 ),
-                vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+                vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=2.0)),
             ),
         )
 
@@ -166,7 +241,7 @@ class PipecatMCPAgent:
                 return
 
             if isinstance(self._runner_args, DailyRunnerArguments):
-                await self._user_speech_queue.put("I just disconnected, but I might come back.")
+                logger.info("Daily client disconnected, keeping pipeline alive for reconnection")
             else:
                 await self._user_speech_queue.put(self._DISCONNECT_SENTINEL)
                 await self._pipeline_task.cancel()
@@ -235,6 +310,11 @@ class PipecatMCPAgent:
         Queues LLM response frames to synthesize and play the given text.
         Starts the pipeline automatically if not already running.
 
+        Emotion tag handling per preset:
+        - **groq**: Orpheus tags pass through natively.
+        - **cartesia**: ``[cheerful]`` → ``<emotion value="happy"/>``, etc.
+        - **deepgram/local/kokoro**: Tags stripped (no markup support).
+
         Args:
             text: The text to speak to the user.
 
@@ -247,6 +327,14 @@ class PipecatMCPAgent:
 
         if not self._pipeline_task:
             raise RuntimeError("Pipecat MCP Agent not initialized")
+
+        # Convert or strip emotion tags based on TTS capabilities
+        if self._preset in _ORPHEUS_PRESETS:
+            pass  # Orpheus tags pass through natively
+        elif self._preset in _CARTESIA_PRESETS:
+            text = _orpheus_to_cartesia(text)
+        else:
+            text = _strip_emotion_tags(text)
 
         await self._pipeline_task.queue_frames(
             [
@@ -263,7 +351,7 @@ class PipecatMCPAgent:
             A list of dicts with title, app_name, and window_id fields.
 
         """
-        windows = await self._screen_capture._backend.list_windows()
+        windows = await self._screen_capture.list_windows()
         return [
             {"title": w.title, "app_name": w.app_name, "window_id": w.window_id} for w in windows
         ]
@@ -293,14 +381,85 @@ class PipecatMCPAgent:
         self._vision.request_capture()
         return await self._vision.get_result()
 
+    @staticmethod
+    def _resolve_preset() -> str:
+        """Resolve the active voice preset from VOICE_PRESET env var."""
+        preset = os.getenv("VOICE_PRESET", "groq").lower()
+        if preset not in VALID_PRESETS:
+            logger.warning(f"Unknown VOICE_PRESET '{preset}', falling back to 'groq'")
+            preset = "groq"
+        logger.info(f"Using voice preset: {preset}")
+        return preset
+
     def _create_stt_service(self) -> STTService:
-        if sys.platform == "darwin":
-            return WhisperSTTServiceMLX(model="mlx-community/whisper-large-v3-turbo")
-        else:
-            return WhisperSTTService(model="Systran/faster-distil-whisper-large-v3")
+        preset = self._preset
+
+        if preset in ("deepgram", "cartesia"):
+            api_key = os.getenv("DEEPGRAM_API_KEY", "")
+            if not api_key:
+                raise ValueError(f"DEEPGRAM_API_KEY required for '{preset}' preset")
+            return DeepgramSTTService(
+                api_key=api_key,
+                model="nova-3-general",
+            )
+
+        if preset in ("local", "kokoro"):
+            if sys.platform == "darwin":
+                return WhisperSTTServiceMLX(model="mlx-community/whisper-large-v3-turbo")
+            else:
+                return WhisperSTTService(model="Systran/faster-distil-whisper-large-v3")
+
+        # Default: groq
+        groq_key = os.getenv("GROQ_API_KEY", "")
+        if not groq_key:
+            raise ValueError("GROQ_API_KEY required for 'groq' preset")
+        return GroqSTTService(
+            api_key=groq_key,
+            model="whisper-large-v3-turbo",
+        )
 
     def _create_tts_service(self) -> TTSService:
-        return KokoroTTSService(voice_id="af_heart")
+        preset = self._preset
+
+        if preset == "deepgram":
+            api_key = os.getenv("DEEPGRAM_API_KEY", "")
+            if not api_key:
+                raise ValueError("DEEPGRAM_API_KEY required for 'deepgram' preset")
+            from pipecat.services.deepgram import DeepgramTTSService
+
+            return DeepgramTTSService(
+                api_key=api_key,
+                voice="aura-2-en-US-asteria",
+            )
+
+        if preset == "cartesia":
+            api_key = os.getenv("CARTESIA_API_KEY", "")
+            if not api_key:
+                raise ValueError("CARTESIA_API_KEY required for 'cartesia' preset")
+            from pipecat.services.cartesia import CartesiaTTSService
+
+            return CartesiaTTSService(
+                api_key=api_key,
+                voice_id="a0e99841-438c-4a64-b679-ae501e7d6091",  # Barbershop Man
+            )
+
+        if preset == "kokoro":
+            from pipecat_mcp_server.processors.kokoro_tts import KokoroTTSService
+
+            return KokoroTTSService(voice_id="af_heart")
+
+        if preset == "local":
+            from pipecat.services.piper import PiperTTSService
+
+            return PiperTTSService(voice="en_US-amy-medium")
+
+        # Default: groq
+        api_key = os.getenv("GROQ_API_KEY", "")
+        return GroqTTSService(
+            api_key=api_key,
+            model_name="canopylabs/orpheus-v1-english",
+            voice_id="hannah",
+        )
 
 
 async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
@@ -323,6 +482,15 @@ async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
             audio_in_enabled=True,
             audio_out_enabled=True,
             video_out_enabled=True,
+            audio_in_filter=RNNoiseFilter(),
+        )
+    elif isinstance(runner_args, LiveKitRunnerArguments):
+        from pipecat.transports.livekit.transport import LiveKitParams
+
+        transport_params["livekit"] = lambda: LiveKitParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            video_out_enabled=False,
             audio_in_filter=RNNoiseFilter(),
         )
     elif isinstance(runner_args, SmallWebRTCRunnerArguments):
