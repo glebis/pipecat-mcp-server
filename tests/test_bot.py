@@ -10,6 +10,7 @@ class TestBotCaptureScreenshotRouting:
 
     @pytest.mark.asyncio
     async def test_capture_screenshot_dispatches_to_agent(self):
+        """Bot routes capture_screenshot to agent and returns path dict."""
         # Arrange
         mock_agent = AsyncMock()
         mock_agent.capture_screenshot.return_value = "/tmp/screenshot.png"

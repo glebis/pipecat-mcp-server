@@ -13,6 +13,7 @@ from pipecat_mcp_server.processors.vision import VisionProcessor
 
 @pytest.fixture
 def vision():
+    """Create a fresh VisionProcessor for each test."""
     return VisionProcessor()
 
 
@@ -29,6 +30,7 @@ class TestVisionProcessorCapturesOnRequest:
 
     @pytest.mark.asyncio
     async def test_saves_png_when_capture_requested(self, vision):
+        """Requested capture saves a PNG file and queues its path."""
         # Arrange
         frame = _make_image_frame()
         vision.request_capture()
@@ -51,6 +53,7 @@ class TestVisionProcessorIgnoresWithoutRequest:
 
     @pytest.mark.asyncio
     async def test_does_not_save_without_request(self, vision):
+        """Image frames pass through without saving when capture not requested."""
         # Arrange
         frame = _make_image_frame()
         # Do NOT call request_capture()
@@ -63,6 +66,7 @@ class TestVisionProcessorIgnoresWithoutRequest:
 
     @pytest.mark.asyncio
     async def test_non_image_frame_passes_through(self, vision):
+        """Non-image frames are ignored; capture flag stays set."""
         # Arrange
         non_image_frame = Frame()
         vision.request_capture()
@@ -81,6 +85,7 @@ class TestVisionProcessorSingleShot:
 
     @pytest.mark.asyncio
     async def test_flag_resets_after_capture(self, vision):
+        """Capture flag resets after one capture (single-shot behavior)."""
         # Arrange
         frame1 = _make_image_frame()
         frame2 = _make_image_frame()

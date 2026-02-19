@@ -10,6 +10,7 @@ class TestServerCaptureScreenshotTool:
 
     @pytest.mark.asyncio
     async def test_returns_path_from_ipc_response(self):
+        """IPC response with 'path' key should be returned directly."""
         with patch(
             "pipecat_mcp_server.server.send_command",
             new_callable=AsyncMock,
@@ -23,6 +24,7 @@ class TestServerCaptureScreenshotTool:
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_no_path(self):
+        """Missing 'path' key should return fallback message."""
         with patch(
             "pipecat_mcp_server.server.send_command",
             new_callable=AsyncMock,
