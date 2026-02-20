@@ -24,13 +24,16 @@ import aiohttp
 from loguru import logger
 from mcp.server.fastmcp import FastMCP
 
-from pipecat_mcp_server import agent_ipc
+from pipecat_mcp_server.agent_ipc import (
+    _manager as agent_process,
+)
 from pipecat_mcp_server.agent_ipc import (
     check_startup_health,
     send_command,
     start_pipecat_process,
     stop_pipecat_process,
 )
+from pipecat_mcp_server.domain.voice_preset import validate_preset_with_env
 
 RUNNER_URL = "http://localhost:7860"
 TRANSPORT = os.environ.get("TRANSPORT", "webrtc")
@@ -38,37 +41,8 @@ TRANSPORT = os.environ.get("TRANSPORT", "webrtc")
 logger.remove()
 logger.add(sys.stderr, level="DEBUG")
 
-# Allowed voice presets and their required API keys
-_PRESET_REQUIRED_KEYS: dict[str, list[str]] = {
-    "groq": ["GROQ_API_KEY"],
-    "deepgram": ["DEEPGRAM_API_KEY"],
-    "cartesia": ["DEEPGRAM_API_KEY", "CARTESIA_API_KEY"],
-    "local": [],
-    "kokoro": [],
-}
-
 # Telephony transports that use WebSocket/ngrok (no local HTTP endpoint)
 _TELEPHONY_TRANSPORTS = {"twilio", "telnyx", "plivo", "exotel"}
-
-
-def _validate_preset() -> dict:
-    """Validate VOICE_PRESET and check required API keys.
-
-    Returns a dict with:
-        preset: the preset name
-        missing_keys: list of env var names that are required but not set
-        error: (optional) present if the preset name is invalid
-    """
-    preset = os.environ.get("VOICE_PRESET", "groq")
-    if preset not in _PRESET_REQUIRED_KEYS:
-        return {
-            "preset": preset,
-            "missing_keys": [],
-            "error": f"Invalid preset '{preset}'. Allowed: {', '.join(sorted(_PRESET_REQUIRED_KEYS))}",
-        }
-    required = _PRESET_REQUIRED_KEYS[preset]
-    missing = [k for k in required if not os.environ.get(k)]
-    return {"preset": preset, "missing_keys": missing}
 
 
 async def _check_transport_readiness(transport: str) -> str:
@@ -139,24 +113,21 @@ async def start() -> str:
     Returns "ok" if the agent was started successfully, or an error message.
     """
     # Validate voice preset and API keys before starting the child process
-    validation = _validate_preset()
-    preset = validation["preset"]
+    preset_info = validate_preset_with_env(os.environ)
+    preset = preset_info.name
 
-    if "error" in validation:
-        return validation["error"]
+    if not preset_info.is_valid:
+        return preset_info.error
 
-    if validation["missing_keys"]:
-        keys = ", ".join(validation["missing_keys"])
-        return (
-            f"Missing API key(s) for '{preset}' preset: {keys}. Set the key or change VOICE_PRESET."
-        )
+    if preset_info.error:
+        return f"{preset_info.error}. Set the key or change VOICE_PRESET."
 
     error = start_pipecat_process()
     if error:
         return error
 
     # Async health check (replaces blocking time.sleep in agent_ipc)
-    health_error = await check_startup_health(agent_ipc._pipecat_process, agent_ipc._response_queue)
+    health_error = await agent_process.check_health()
     if health_error:
         return health_error
 

@@ -1,6 +1,6 @@
 """Tests for Orpheus emotion tag processing functions."""
 
-from pipecat_mcp_server.agent import _orpheus_to_cartesia, _strip_emotion_tags
+from pipecat_mcp_server.domain.emotion_tags import _orpheus_to_cartesia, _strip_emotion_tags
 
 
 class TestStripEmotionTags:

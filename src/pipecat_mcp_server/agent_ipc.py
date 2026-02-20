@@ -23,30 +23,18 @@ from loguru import logger
 # issues. Spawn creates a fresh Python interpreter.
 multiprocessing.set_start_method("spawn", force=True)
 
+# ---------------------------------------------------------------------------
+# Module-level globals for child-process IPC (used by run_pipecat_process,
+# send_response, read_request which run inside the spawned child process).
+# ---------------------------------------------------------------------------
 _cmd_queue: Optional[multiprocessing.Queue] = None
 _response_queue: Optional[multiprocessing.Queue] = None
 _pipecat_process: Optional[multiprocessing.Process] = None
 
 
-def _cleanup():
-    """Clean up the pipecat child process."""
-    global _pipecat_process, _cmd_queue, _response_queue
-
-    logger.debug(f"Checking if Pipecat MCP Agent process is actually running...")
-    if _pipecat_process:
-        # Force terminate if still alive
-        if _pipecat_process.is_alive():
-            logger.debug(f"Terminating Pipecat MCP Agent process (PID {_pipecat_process.ident})")
-            _pipecat_process.terminate()
-            _pipecat_process.join(timeout=1.0)
-
-        # Kill if terminate didn't work
-        if _pipecat_process.is_alive():
-            logger.debug(f"Killing Pipecat MCP Agent process (PID {_pipecat_process.ident})")
-            _pipecat_process.kill()
-            _pipecat_process.join(timeout=1.0)
-
-        _pipecat_process = None
+# ---------------------------------------------------------------------------
+# Module-level utility helpers (not part of the manager)
+# ---------------------------------------------------------------------------
 
 
 def _cleanup_port(port: int = 7860) -> tuple[list[str], list[str]]:
@@ -93,10 +81,311 @@ def _cleanup_port(port: int = 7860) -> tuple[list[str], list[str]]:
     return killed, warned
 
 
+def _get_with_timeout(queue: multiprocessing.Queue, timeout: float = 0.5):
+    """Get from queue with timeout to allow cancellation.
+
+    Args:
+        queue: The queue to read from.
+        timeout: Timeout in seconds.
+
+    Returns:
+        Item from the queue.
+
+    Raises:
+        TimeoutError: If the timeout expires before an item is available.
+
+    """
+    try:
+        return queue.get(timeout=timeout)
+    except queue_module.Empty:
+        raise TimeoutError("Queue get timed out")
+
+
+# ---------------------------------------------------------------------------
+# PipecatProcessManager: encapsulates IPC state & lifecycle
+# ---------------------------------------------------------------------------
+
+
+class PipecatProcessManager:
+    """Manages the Pipecat child process lifecycle and IPC.
+
+    Holds queue and process state as instance attributes and implements the
+    VoiceAgentProcessPort protocol.
+    """
+
+    def __init__(self):
+        """Initialize the manager with empty state."""
+        self._cmd_queue: Optional[multiprocessing.Queue] = None
+        self._response_queue: Optional[multiprocessing.Queue] = None
+        self._pipecat_process: Optional[multiprocessing.Process] = None
+
+    # -- properties ----------------------------------------------------------
+
+    @property
+    def process(self) -> Optional[multiprocessing.Process]:
+        """Return the child process handle, or None if not started."""
+        return self._pipecat_process
+
+    @property
+    def response_queue(self) -> Optional[multiprocessing.Queue]:
+        """Return the response queue, or None if not started."""
+        return self._response_queue
+
+    # -- internal helpers ----------------------------------------------------
+
+    def _cleanup(self) -> None:
+        """Clean up the pipecat child process."""
+        logger.debug("Checking if Pipecat MCP Agent process is actually running...")
+        if self._pipecat_process:
+            # Force terminate if still alive
+            if self._pipecat_process.is_alive():
+                logger.debug(
+                    f"Terminating Pipecat MCP Agent process (PID {self._pipecat_process.ident})"
+                )
+                self._pipecat_process.terminate()
+                self._pipecat_process.join(timeout=1.0)
+
+            # Kill if terminate didn't work
+            if self._pipecat_process.is_alive():
+                logger.debug(
+                    f"Killing Pipecat MCP Agent process (PID {self._pipecat_process.ident})"
+                )
+                self._pipecat_process.kill()
+                self._pipecat_process.join(timeout=1.0)
+
+            self._pipecat_process = None
+
+    def _check_process_alive(self) -> None:
+        """Check if the pipecat process is still alive.
+
+        Raises:
+            RuntimeError: If the process has stopped.
+
+        """
+        if self._pipecat_process and not self._pipecat_process.is_alive():
+            # Try to get error details from the response queue
+            error_msg = None
+            try:
+                if self._response_queue:
+                    msg = self._response_queue.get_nowait()
+                    if isinstance(msg, dict) and "_startup_error" in msg:
+                        error_msg = msg["_startup_error"]
+            except Exception:
+                pass
+            detail = (
+                f": {error_msg}" if error_msg else f" (exit code: {self._pipecat_process.exitcode})"
+            )
+            raise RuntimeError(f"Voice agent process has stopped{detail}")
+
+    async def _wait_for_command_response(self, timeout: float = 0.5) -> dict:
+        """Wait for response from child process with health checks.
+
+        Args:
+            timeout: Per-poll timeout in seconds.
+
+        Returns:
+            Response dict from the child process.
+
+        """
+        if self._response_queue is None:
+            raise RuntimeError("Pipecat process not started")
+
+        loop = asyncio.get_event_loop()
+
+        while True:
+            try:
+                return await loop.run_in_executor(
+                    None, _get_with_timeout, self._response_queue, timeout
+                )
+            except TimeoutError:
+                self._check_process_alive()
+                await asyncio.sleep(0)  # Yield to allow cancellation
+
+    # -- public protocol methods ---------------------------------------------
+
+    def start(self) -> str | None:
+        """Start the Pipecat child process.
+
+        Creates IPC queues and spawns a new process to run the Pipecat voice
+        agent. Cleans up any existing process before starting a new one.
+
+        Returns:
+            None if started successfully, or an error message string.
+
+        """
+        global _cmd_queue, _response_queue, _pipecat_process
+
+        # Clean up any existing process first
+        self._cleanup()
+
+        # Kill any orphaned pipecat processes holding the runner port
+        _cleanup_port(7860)
+
+        # Create IPC queues using spawn context
+        self._cmd_queue = multiprocessing.Queue()
+        self._response_queue = multiprocessing.Queue()
+
+        # Capture parent sys.argv so the child process can forward CLI args
+        # (e.g. --transport daily) to the pipecat runner
+        import os
+        import sys
+
+        parent_argv = list(sys.argv)
+
+        # Inject transport flag from env var
+        transport = os.environ.get("TRANSPORT", "webrtc")
+        if transport == "daily":
+            if "--transport" not in parent_argv and "-d" not in parent_argv:
+                parent_argv.extend(["-d"])
+        else:
+            if "--transport" not in parent_argv:
+                parent_argv.extend(["--transport", transport])
+
+        # Start pipecat as separate process
+        logger.debug("Starting Pipecat MCP Agent process...")
+        self._pipecat_process = multiprocessing.Process(
+            target=run_pipecat_process,
+            args=(self._cmd_queue, self._response_queue, parent_argv),
+        )
+        self._pipecat_process.start()
+        logger.debug(f"Started Pipecat MCP Agent process (PID {self._pipecat_process.ident})")
+
+        # Sync module-level globals for backward compatibility
+        _cmd_queue = self._cmd_queue
+        _response_queue = self._response_queue
+        _pipecat_process = self._pipecat_process
+
+        return None
+
+    def stop(self) -> None:
+        """Stop the pipecat child process (explicit cleanup).
+
+        Terminates the child process and resets internal state.
+        """
+        global _pipecat_process, _cmd_queue, _response_queue
+
+        logger.debug("Stopping Pipecat MCP Agent process...")
+        self._cleanup()
+        logger.debug("Stopped Pipecat MCP Agent")
+
+        # Sync module-level globals
+        _pipecat_process = self._pipecat_process
+        _cmd_queue = self._cmd_queue
+        _response_queue = self._response_queue
+
+    async def check_health(self, delay: float = 1.0) -> str | None:
+        """Check if the child process survived startup.
+
+        Uses asyncio.sleep instead of time.sleep to avoid blocking the event loop.
+
+        Args:
+            delay: Seconds to wait before checking.
+
+        Returns:
+            None if process is alive, or error message string if it died.
+
+        """
+        await asyncio.sleep(delay)
+        if self._pipecat_process and self._pipecat_process.is_alive():
+            return None
+
+        error_msg = None
+        try:
+            if self._response_queue:
+                msg = self._response_queue.get_nowait()
+                if isinstance(msg, dict) and "_startup_error" in msg:
+                    error_msg = msg["_startup_error"]
+        except Exception:
+            pass
+
+        exit_code = self._pipecat_process.exitcode if self._pipecat_process else None
+        if error_msg:
+            return f"Voice agent crashed on startup:\n{error_msg}"
+        return f"Voice agent process exited immediately (exit code: {exit_code})"
+
+    async def send_command(self, cmd: str, **kwargs) -> dict:
+        """Send a command to the Pipecat child process and wait for response.
+
+        Args:
+            cmd: Command name (e.g., "listen", "speak", "stop").
+            **kwargs: Additional arguments for the command.
+
+        Returns:
+            Response dictionary from the child process.
+
+        """
+        if self._cmd_queue is None or self._response_queue is None:
+            raise RuntimeError("Pipecat process not started")
+
+        request = {"cmd": cmd, **kwargs}
+
+        # Send request to child process
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._cmd_queue.put, request)
+
+        # Wait for response with cancellation support
+        try:
+            response = await self._wait_for_command_response()
+        except asyncio.CancelledError:
+            logger.info(f"Command '{cmd}' was cancelled")
+            raise
+
+        # Skip startup error messages that may be queued from previous crashes
+        if isinstance(response, dict) and "_startup_error" in response:
+            logger.warning("Skipping stale startup error in queue, re-waiting...")
+            response = await self._wait_for_command_response()
+
+        # Check for errors in response
+        if "error" in response:
+            error_message = response["error"]
+            logger.error(f"Error running command '{cmd}': {error_message}")
+
+        logger.debug(f"Command '{cmd}' response: {response}")
+        return response
+
+
+# ---------------------------------------------------------------------------
+# Module-level default instance
+# ---------------------------------------------------------------------------
+
+_manager = PipecatProcessManager()
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible module-level functions (delegate to _manager)
+# ---------------------------------------------------------------------------
+
+
+def start_pipecat_process() -> str | None:
+    """Start the Pipecat child process.
+
+    Creates IPC queues and spawns a new process to run the Pipecat voice agent.
+    Cleans up any existing process before starting a new one.
+
+    Returns:
+        None if started successfully, or an error message string if startup failed.
+
+    """
+    return _manager.start()
+
+
+def stop_pipecat_process():
+    """Stop the pipecat child process (explicit cleanup)."""
+    _manager.stop()
+
+
 async def check_startup_health(process, response_queue, delay: float = 1.0) -> str | None:
     """Check if the child process survived startup.
 
-    Uses asyncio.sleep instead of time.sleep to avoid blocking the event loop.
+    Kept with the old (process, response_queue) signature for backward
+    compatibility. Delegates to the process/queue objects passed in directly
+    rather than to the manager, so existing callers and tests that supply
+    their own mock process/queue still work correctly.
+
+    Args:
+        process: The child process to check.
+        response_queue: Queue to check for startup error messages.
+        delay: Seconds to wait before checking.
 
     Returns:
         None if process is alive, or error message string if it died.
@@ -121,61 +410,23 @@ async def check_startup_health(process, response_queue, delay: float = 1.0) -> s
     return f"Voice agent process exited immediately (exit code: {exit_code})"
 
 
-def start_pipecat_process() -> str | None:
-    """Start the Pipecat child process.
+async def send_command(cmd: str, **kwargs) -> dict:
+    """Send a command to the Pipecat child process and wait for response.
 
-    Creates IPC queues and spawns a new process to run the Pipecat voice agent.
-    Cleans up any existing process before starting a new one.
+    Args:
+        cmd: Command name (e.g., "listen", "speak", "stop").
+        **kwargs: Additional arguments for the command.
 
     Returns:
-        None if started successfully, or an error message string if startup failed.
+        Response dictionary from the child process.
 
     """
-    global _cmd_queue, _response_queue, _pipecat_process
-
-    # Clean up any existing process first
-    _cleanup()
-
-    # Kill any orphaned pipecat processes holding the runner port
-    _cleanup_port(7860)
-
-    # Create IPC queues using spawn context
-    _cmd_queue = multiprocessing.Queue()
-    _response_queue = multiprocessing.Queue()
-
-    # Capture parent sys.argv so the child process can forward CLI args
-    # (e.g. --transport daily) to the pipecat runner
-    import os
-    import sys
-
-    parent_argv = list(sys.argv)
-
-    # Inject transport flag from env var
-    transport = os.environ.get("TRANSPORT", "webrtc")
-    if transport == "daily":
-        if "--transport" not in parent_argv and "-d" not in parent_argv:
-            parent_argv.extend(["-d"])
-    else:
-        if "--transport" not in parent_argv:
-            parent_argv.extend(["--transport", transport])
-
-    # Start pipecat as separate process
-    logger.debug(f"Starting Pipecat MCP Agent process...")
-    _pipecat_process = multiprocessing.Process(
-        target=run_pipecat_process,
-        args=(_cmd_queue, _response_queue, parent_argv),
-    )
-    _pipecat_process.start()
-    logger.debug(f"Started Pipecat MCP Agent process (PID {_pipecat_process.ident})")
-
-    return None
+    return await _manager.send_command(cmd, **kwargs)
 
 
-def stop_pipecat_process():
-    """Stop the pipecat child process (explicit cleanup)."""
-    logger.debug(f"Stopping Pipecat MCP Agent process...")
-    _cleanup()
-    logger.debug(f"Stopped Pipecat MCP Agent")
+# ---------------------------------------------------------------------------
+# Child-process functions (stay module-level; run inside the spawned process)
+# ---------------------------------------------------------------------------
 
 
 def run_pipecat_process(
@@ -264,95 +515,3 @@ async def read_request() -> dict:
     loop = asyncio.get_event_loop()
     request = await loop.run_in_executor(None, _cmd_queue.get)
     return request
-
-
-def _get_with_timeout(queue: multiprocessing.Queue, timeout: float = 0.5):
-    """Get from queue with timeout to allow cancellation.
-
-    Args:
-        queue: The queue to read from.
-        timeout: Timeout in seconds.
-
-    Returns:
-        Item from the queue.
-
-    Raises:
-        TimeoutError: If the timeout expires before an item is available.
-
-    """
-    try:
-        return queue.get(timeout=timeout)
-    except queue_module.Empty:
-        raise TimeoutError("Queue get timed out")
-
-
-def _check_process_alive():
-    """Check if the pipecat process is still alive."""
-    if _pipecat_process and not _pipecat_process.is_alive():
-        # Try to get error details from the response queue
-        error_msg = None
-        try:
-            if _response_queue:
-                msg = _response_queue.get_nowait()
-                if isinstance(msg, dict) and "_startup_error" in msg:
-                    error_msg = msg["_startup_error"]
-        except Exception:
-            pass
-        detail = f": {error_msg}" if error_msg else f" (exit code: {_pipecat_process.exitcode})"
-        raise RuntimeError(f"Voice agent process has stopped{detail}")
-
-
-async def _wait_for_command_response(timeout: float = 0.5) -> dict:
-    """Wait for response from child process with health checks."""
-    if _response_queue is None:
-        raise RuntimeError("Pipecat process not started")
-
-    loop = asyncio.get_event_loop()
-
-    while True:
-        try:
-            return await loop.run_in_executor(None, _get_with_timeout, _response_queue, timeout)
-        except TimeoutError:
-            _check_process_alive()
-            await asyncio.sleep(0)  # Yield to allow cancellation
-
-
-async def send_command(cmd: str, **kwargs) -> dict:
-    """Send a command to the Pipecat child process and wait for response.
-
-    Args:
-        cmd: Command name (e.g., "listen", "speak", "stop").
-        **kwargs: Additional arguments for the command.
-
-    Returns:
-        Response dictionary from the child process.
-
-    """
-    if _cmd_queue is None or _response_queue is None:
-        raise RuntimeError("Pipecat process not started")
-
-    request = {"cmd": cmd, **kwargs}
-
-    # Send request to child process
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _cmd_queue.put, request)
-
-    # Wait for response with cancellation support
-    try:
-        response = await _wait_for_command_response()
-    except asyncio.CancelledError:
-        logger.info(f"Command '{cmd}' was cancelled")
-        raise
-
-    # Skip startup error messages that may be queued from previous crashes
-    if isinstance(response, dict) and "_startup_error" in response:
-        logger.warning(f"Skipping stale startup error in queue, re-waiting...")
-        response = await _wait_for_command_response()
-
-    # Check for errors in response
-    if "error" in response:
-        error_message = response["error"]
-        logger.error(f"Error running command '{cmd}': {error_message}")
-
-    logger.debug(f"Command '{cmd}' response: {response}")
-    return response
