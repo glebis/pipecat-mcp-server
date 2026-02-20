@@ -32,23 +32,17 @@ By default, the voice agent uses [Groq](https://groq.com/) cloud services (Whisp
 
 ### Installation
 
-```bash
-uv tool install pipecat-ai-mcp-server
-```
-
-This will install the `pipecat-mcp-server` tool.
-
-If you want to use different services or modify the Pipecat pipeline somehow, you will need to clone the repository:
+Clone this repository and install from source:
 
 ```bash
-git clone https://github.com/pipecat-ai/pipecat-mcp-server.git
+git clone https://github.com/glebis/pipecat-mcp-server.git
+cd pipecat-mcp-server
+uv tool install -e .
 ```
 
-and install your local version with:
+This will install the `pipecat-mcp-server` command from your local checkout, so any changes you make are immediately available.
 
-```bash
-uv tool install -e /path/to/repo/pipecat-mcp-server
-```
+> **Note**: The upstream PyPI package (`uv tool install pipecat-ai-mcp-server`) installs the official release from [pipecat-ai/pipecat-mcp-server](https://github.com/pipecat-ai/pipecat-mcp-server). This fork includes additional DDD architecture improvements, port conflict detection, and expanded test coverage.
 
 ## Running the server
 
@@ -233,7 +227,7 @@ You can also use [Daily](https://daily.co) and access your agent through a Daily
 First, install the server with the Daily dependency:
 
 ```bash
-uv tool install pipecat-ai-mcp-server[daily]
+uv tool install -e ".[daily]"
 ```
 
 Then, set the `DAILY_API_KEY` environment variable to your Daily API key and `DAILY_ROOM_URL` to your desired Daily room URL and pass the `-d` argument to `pipecat-mcp-server`.
