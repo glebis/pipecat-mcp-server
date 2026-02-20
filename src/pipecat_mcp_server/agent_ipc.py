@@ -14,6 +14,8 @@ process runs separately to avoid stdio collisions with the MCP protocol.
 import asyncio
 import multiprocessing
 import queue as queue_module
+import subprocess
+from dataclasses import dataclass, field
 from typing import Optional
 
 from loguru import logger
@@ -37,24 +39,38 @@ _pipecat_process: Optional[multiprocessing.Process] = None
 # ---------------------------------------------------------------------------
 
 
-def _cleanup_port(port: int = 7860) -> tuple[list[str], list[str]]:
+@dataclass
+class PortCleanupResult:
+    """Result of a port cleanup operation.
+
+    Attributes:
+        killed: PIDs of pipecat-owned processes that were killed.
+        warned: PIDs of non-pipecat processes occupying the port.
+        port_available: Whether the port is available after cleanup.
+        stale_pids: PIDs of stale pipecat-mcp-server parent processes.
+
+    """
+
+    killed: list[str] = field(default_factory=list)
+    warned: list[str] = field(default_factory=list)
+    port_available: bool = True
+    stale_pids: list[str] = field(default_factory=list)
+
+
+def _cleanup_port(port: int = 7860) -> PortCleanupResult:
     """Kill pipecat-owned processes on the given port, warn about others.
 
     Returns:
-        Tuple of (killed_pids, warned_pids).
+        PortCleanupResult with killed/warned PIDs and port availability.
 
     """
-    import subprocess
-
-    killed = []
-    warned = []
+    killed: list[str] = []
+    warned: list[str] = []
     try:
         result = subprocess.run(
             ["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=5
         )
-        if not result.stdout.strip():
-            return killed, warned
-        for pid in result.stdout.strip().split("\n"):
+        for pid in result.stdout.strip().split("\n") if result.stdout.strip() else []:
             pid = pid.strip()
             if not pid:
                 continue
@@ -78,7 +94,32 @@ def _cleanup_port(port: int = 7860) -> tuple[list[str], list[str]]:
                 warned.append(pid)
     except Exception as e:
         logger.debug(f"Port cleanup check failed: {e}")
-    return killed, warned
+
+    # Port is available if no warned (non-killable) processes remain
+    port_available = len(warned) == 0
+
+    # Detect stale pipecat-mcp-server parent processes (not holding the port)
+    stale_pids: list[str] = []
+    try:
+        import os
+
+        current_pid = str(os.getpid())
+        ps_aux_result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
+        for line in ps_aux_result.stdout.strip().split("\n"):
+            if "pipecat-mcp-server" not in line or "grep" in line:
+                continue
+            # Extract PID (second field in ps aux output)
+            parts = line.split()
+            if len(parts) >= 2:
+                pid_candidate = parts[1]
+                if pid_candidate != current_pid:
+                    stale_pids.append(pid_candidate)
+    except Exception as e:
+        logger.debug(f"Stale process detection failed: {e}")
+
+    return PortCleanupResult(
+        killed=killed, warned=warned, port_available=port_available, stale_pids=stale_pids
+    )
 
 
 def _get_with_timeout(queue: multiprocessing.Queue, timeout: float = 0.5):
@@ -219,7 +260,21 @@ class PipecatProcessManager:
         self._cleanup()
 
         # Kill any orphaned pipecat processes holding the runner port
-        _cleanup_port(7860)
+        cleanup_result = _cleanup_port(7860)
+
+        # Fail fast if port is still occupied by a non-pipecat process
+        if hasattr(cleanup_result, "port_available") and not cleanup_result.port_available:
+            warned = cleanup_result.warned
+            pid_info = warned[0] if warned else "unknown"
+            return f"Port 7860 is occupied by PID {pid_info}. Kill it or choose a different port."
+
+        # Warn about stale pipecat-mcp-server processes (don't block startup)
+        if hasattr(cleanup_result, "stale_pids") and cleanup_result.stale_pids:
+            pids = ", ".join(cleanup_result.stale_pids)
+            logger.warning(
+                f"Found stale pipecat-mcp-server processes: {pids}. "
+                f"Consider killing them to avoid resource waste."
+            )
 
         # Create IPC queues using spawn context
         self._cmd_queue = multiprocessing.Queue()

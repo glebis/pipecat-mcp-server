@@ -18,6 +18,7 @@ Tools:
 
 import asyncio
 import os
+import subprocess
 import sys
 
 import aiohttp
@@ -45,6 +46,36 @@ logger.add(sys.stderr, level="DEBUG")
 _TELEPHONY_TRANSPORTS = {"twilio", "telnyx", "plivo", "exotel"}
 
 
+def _diagnose_port(port: int) -> str:
+    """Check whether *port* is occupied and return a human-readable diagnosis.
+
+    Uses ``lsof`` to inspect the port.  Returns a string such as
+    ``" Port 7860 is in use by PID 123 (python3)."`` when the port is
+    occupied, or ``" Port 7860 is free — the child process may have
+    crashed. Check logs."`` when nothing is listening.
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}", "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Parse the first data line: "COMMAND PID USER ..."
+            lines = result.stdout.strip().splitlines()
+            # Skip header if present, take first data line
+            data_line = lines[-1] if len(lines) == 1 else lines[1]
+            parts = data_line.split()
+            if len(parts) >= 2:
+                proc_name = parts[0]
+                pid = parts[1]
+                return f" Port {port} is in use by PID {pid} ({proc_name})."
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return f" Port {port} is free — the child process may have crashed. Check logs."
+
+
 async def _check_transport_readiness(transport: str) -> str:
     """Check transport-specific readiness after the child process is healthy.
 
@@ -69,7 +100,7 @@ async def _check_transport_readiness(transport: str) -> str:
             except aiohttp.ClientConnectorError:
                 logger.debug(f"Runner not ready yet (attempt {attempt + 1}/5)")
                 continue
-        return "Runner HTTP server did not become available after 5 attempts"
+        return "Runner HTTP server did not become available after 5 attempts" + _diagnose_port(7860)
 
     elif transport == "webrtc":
         # WebRTC transport: wait for runner to serve the playground UI.
@@ -84,7 +115,7 @@ async def _check_transport_readiness(transport: str) -> str:
             except aiohttp.ClientConnectorError:
                 logger.debug(f"Runner not ready yet (attempt {attempt + 1}/5)")
                 continue
-        return "Runner HTTP server did not become available after 5 attempts"
+        return "Runner HTTP server did not become available after 5 attempts" + _diagnose_port(7860)
 
     elif transport == "livekit":
         # LiveKit connects to an external WebRTC server; no local HTTP endpoint.

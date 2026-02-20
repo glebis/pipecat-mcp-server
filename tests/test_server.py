@@ -2,7 +2,17 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
+
+
+# aiohttp is mocked by conftest, so ClientConnectorError is a MagicMock.
+# We need a real exception class for ``except aiohttp.ClientConnectorError``.
+class _ClientConnectorError(Exception):
+    """Stand-in for aiohttp.ClientConnectorError usable in except clauses."""
+
+
+aiohttp.ClientConnectorError = _ClientConnectorError
 
 
 class TestServerCaptureScreenshotTool:
@@ -351,3 +361,99 @@ class TestStartIntegration:
         assert "GROQ_API_KEY" in result
         # start_pipecat_process should NOT have been called
         mock_start.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Slice 3: _diagnose_port and transport failure enrichment
+# ---------------------------------------------------------------------------
+
+
+class TestDiagnosePort:
+    """_diagnose_port returns human-readable port status."""
+
+    def test_diagnose_port_occupied(self):
+        """When lsof finds a process on the port, return PID and process name."""
+        from pipecat_mcp_server.server import _diagnose_port
+
+        lsof_output = "python3 12345 user   3u  IPv4  0x1234  0t0  TCP *:7860 (LISTEN)\n"
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = lsof_output
+
+        with patch("pipecat_mcp_server.server.subprocess.run", return_value=mock_result):
+            result = _diagnose_port(7860)
+
+        assert "12345" in result
+        assert "python3" in result
+        assert "in use" in result.lower()
+
+    def test_diagnose_port_free(self):
+        """When lsof finds nothing, return that the port is free."""
+        from pipecat_mcp_server.server import _diagnose_port
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+
+        with patch("pipecat_mcp_server.server.subprocess.run", return_value=mock_result):
+            result = _diagnose_port(7860)
+
+        assert "free" in result.lower()
+        assert "crash" in result.lower() or "child process" in result.lower()
+
+
+def _mock_aiohttp_always_fail():
+    """Create a mock aiohttp session where every request raises ClientConnectorError."""
+    conn_error = _ClientConnectorError("Connection refused")
+
+    mock_session = AsyncMock()
+    mock_session.get = MagicMock(side_effect=conn_error)
+    mock_session.post = MagicMock(side_effect=conn_error)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_session
+
+
+class TestTransportFailureIncludesDiagnosis:
+    """Transport failure messages should include port diagnosis info."""
+
+    @pytest.mark.asyncio
+    async def test_daily_transport_failure_includes_diagnosis(self):
+        """Daily transport failure after 5 attempts should include port diagnosis."""
+        from pipecat_mcp_server.server import _check_transport_readiness
+
+        mock_session = _mock_aiohttp_always_fail()
+        mock_cs = MagicMock(return_value=mock_session)
+        diagnosis = " Port 7860 is in use by PID 99999 (fake_proc)."
+
+        with (
+            patch("pipecat_mcp_server.server.aiohttp.ClientSession", mock_cs),
+            patch("pipecat_mcp_server.server.asyncio.sleep", new_callable=AsyncMock),
+            patch("pipecat_mcp_server.server._diagnose_port", return_value=diagnosis),
+        ):
+            result = await _check_transport_readiness("daily")
+
+        assert "5 attempts" in result
+        assert "PID 99999" in result
+        assert "fake_proc" in result
+
+    @pytest.mark.asyncio
+    async def test_webrtc_transport_failure_includes_diagnosis(self):
+        """WebRTC transport failure after 5 attempts should include port diagnosis."""
+        from pipecat_mcp_server.server import _check_transport_readiness
+
+        mock_session = _mock_aiohttp_always_fail()
+        mock_cs = MagicMock(return_value=mock_session)
+        diagnosis = " Port 7860 is free — the child process may have crashed. Check logs."
+
+        with (
+            patch("pipecat_mcp_server.server.aiohttp.ClientSession", mock_cs),
+            patch("pipecat_mcp_server.server.asyncio.sleep", new_callable=AsyncMock),
+            patch("pipecat_mcp_server.server._diagnose_port", return_value=diagnosis),
+        ):
+            result = await _check_transport_readiness("webrtc")
+
+        assert "5 attempts" in result
+        assert "free" in result.lower()
+        assert "child process" in result.lower()
