@@ -82,9 +82,11 @@ async def _check_transport_readiness(transport: str) -> str:
     Returns a human-readable status string starting with "ok" on success,
     or an error message on failure.
     """
+    max_attempts = 15  # Daily/WebRTC may need 10-15s for model downloads on first run
+
     if transport == "daily":
         # Daily transport: trigger the bot to join a Daily room via runner's HTTP endpoint.
-        for attempt in range(5):
+        for attempt in range(max_attempts):
             await asyncio.sleep(1.0)
             try:
                 async with aiohttp.ClientSession() as session:
@@ -98,13 +100,15 @@ async def _check_transport_readiness(transport: str) -> str:
                             body = await resp.text()
                             return f"Runner /start returned {resp.status}: {body}"
             except aiohttp.ClientConnectorError:
-                logger.debug(f"Runner not ready yet (attempt {attempt + 1}/5)")
+                logger.debug(f"Runner not ready yet (attempt {attempt + 1}/{max_attempts})")
                 continue
-        return "Runner HTTP server did not become available after 5 attempts" + _diagnose_port(7860)
+        return f"Runner HTTP server did not become available after {max_attempts} attempts" + _diagnose_port(
+            7860
+        )
 
     elif transport == "webrtc":
         # WebRTC transport: wait for runner to serve the playground UI.
-        for attempt in range(5):
+        for attempt in range(max_attempts):
             await asyncio.sleep(1.0)
             try:
                 async with aiohttp.ClientSession() as session:
@@ -113,9 +117,11 @@ async def _check_transport_readiness(transport: str) -> str:
                             logger.info(f"WebRTC playground ready at {RUNNER_URL}/client")
                             return f"ok - open {RUNNER_URL}/client in your browser"
             except aiohttp.ClientConnectorError:
-                logger.debug(f"Runner not ready yet (attempt {attempt + 1}/5)")
+                logger.debug(f"Runner not ready yet (attempt {attempt + 1}/{max_attempts})")
                 continue
-        return "Runner HTTP server did not become available after 5 attempts" + _diagnose_port(7860)
+        return f"Runner HTTP server did not become available after {max_attempts} attempts" + _diagnose_port(
+            7860
+        )
 
     elif transport == "livekit":
         # LiveKit connects to an external WebRTC server; no local HTTP endpoint.
